@@ -228,3 +228,101 @@ class CameraSessionLog {
     required this.detail,
   });
 }
+
+// ─── Voice Sentinel Enums ────────────────────────────────────
+
+enum VoiceSeverity { clean, mild, moderate, severe }
+
+enum VoiceSessionStatus { recording, paused, completed, error }
+
+enum LanguageAlertType { profanity, hostility, threat, harassment, toxic }
+
+// ─── Voice Audio Chunk ───────────────────────────────────────
+
+class VoiceAudioChunk {
+  final String id;
+  final String sessionId;
+  final String filePath;
+  final Duration duration;
+  final DateTime timestamp;
+  final double volumeDb;
+  final String? transcript;
+  final VoiceSeverity severity;
+  final List<String> flaggedWords;
+
+  const VoiceAudioChunk({
+    required this.id,
+    required this.sessionId,
+    required this.filePath,
+    required this.duration,
+    required this.timestamp,
+    required this.volumeDb,
+    this.transcript,
+    required this.severity,
+    required this.flaggedWords,
+  });
+}
+
+// ─── Voice Language Alert ────────────────────────────────────
+
+class VoiceLanguageAlert {
+  final String id;
+  final String sessionId;
+  final String chunkId;
+  final LanguageAlertType alertType;
+  final VoiceSeverity severity;
+  final String flaggedPhrase;
+  final String context;
+  final double confidenceScore;
+  final DateTime timestamp;
+
+  const VoiceLanguageAlert({
+    required this.id,
+    required this.sessionId,
+    required this.chunkId,
+    required this.alertType,
+    required this.severity,
+    required this.flaggedPhrase,
+    required this.context,
+    required this.confidenceScore,
+    required this.timestamp,
+  });
+}
+
+// ─── Voice Session ───────────────────────────────────────────
+
+class VoiceSession {
+  final String id;
+  final DateTime startTime;
+  final DateTime? endTime;
+  final VoiceSessionStatus status;
+  final int totalChunks;
+  final int alertCount;
+  final double avgVolume;
+  final Duration totalDuration;
+
+  const VoiceSession({
+    required this.id,
+    required this.startTime,
+    this.endTime,
+    required this.status,
+    required this.totalChunks,
+    required this.alertCount,
+    required this.avgVolume,
+    required this.totalDuration,
+  });
+}
+
+// ─── Voice Waveform Sample ───────────────────────────────────
+
+class VoiceWaveformSample {
+  final double amplitude;
+  final DateTime timestamp;
+  final bool isFlagged;
+
+  const VoiceWaveformSample({
+    required this.amplitude,
+    required this.timestamp,
+    this.isFlagged = false,
+  });
+}

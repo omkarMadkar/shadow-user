@@ -1,18 +1,23 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'providers/sentinel_provider.dart';
+import 'providers/voice_sentinel_provider.dart';
 import 'theme/sentinel_theme.dart';
 import 'screens/dashboard_screen.dart';
 import 'screens/email_threat_screen.dart';
 import 'screens/neural_camera_screen.dart';
+import 'screens/voice_sentinel_screen.dart';
 import 'widgets/sentinel_header.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
 
   runApp(
-    ChangeNotifierProvider(
-      create: (_) => SentinelProvider(),
+    MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => SentinelProvider()),
+        ChangeNotifierProvider(create: (_) => VoiceSentinelProvider()),
+      ],
       child: const ShadowSentinelApp(),
     ),
   );
@@ -47,6 +52,7 @@ class _MainShellState extends State<MainShell> {
     DashboardScreen(),
     EmailThreatScreen(),
     NeuralCameraScreen(),
+    VoiceSentinelScreen(),
   ];
 
   @override
@@ -110,7 +116,10 @@ class _MainShellState extends State<MainShell> {
           items: [
             BottomNavigationBarItem(
               icon: Icon(Icons.dashboard),
-              activeIcon: _ActiveNavIcon(Icons.dashboard, SentinelTheme.cyberBlue),
+              activeIcon: _ActiveNavIcon(
+                Icons.dashboard,
+                SentinelTheme.cyberBlue,
+              ),
               label: 'DASHBOARD',
             ),
             BottomNavigationBarItem(
@@ -120,8 +129,16 @@ class _MainShellState extends State<MainShell> {
             ),
             BottomNavigationBarItem(
               icon: Icon(Icons.face_retouching_natural),
-              activeIcon: _ActiveNavIcon(Icons.face_retouching_natural, SentinelTheme.cyberCyan),
+              activeIcon: _ActiveNavIcon(
+                Icons.face_retouching_natural,
+                SentinelTheme.cyberCyan,
+              ),
               label: 'NEURAL CAMERA',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.mic),
+              activeIcon: _ActiveNavIcon(Icons.mic, const Color(0xFF8B5CF6)),
+              label: 'VOICE SENTINEL',
             ),
           ],
         ),

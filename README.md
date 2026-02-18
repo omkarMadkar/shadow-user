@@ -25,6 +25,7 @@ A Flutter desktop application for real-time cybersecurity monitoring with behavi
 3. **macOS** — Xcode 15+ with command-line tools
 
 Verify your setup:
+
 ```bash
 flutter doctor
 ```
@@ -34,17 +35,20 @@ flutter doctor
 ## Quick Start
 
 ### 1. Extract the ZIP
+
 ```
 Unzip shadow_sentinel_flutter.zip to any directory.
 ```
 
 ### 2. Install Dependencies
+
 ```bash
 cd shadow_sentinel_flutter
 flutter pub get
 ```
 
 ### 3. Run the App
+
 ```bash
 # Windows
 flutter run -d windows
@@ -54,6 +58,7 @@ flutter run -d macos
 ```
 
 ### 4. Build a Release Binary
+
 ```bash
 # Windows
 flutter build windows --release
@@ -63,6 +68,7 @@ flutter build macos --release
 ```
 
 The release binary will be in:
+
 - **Windows:** `build\windows\x64\runner\Release\shadow_sentinel.exe`
 - **macOS:** `build/macos/Build/Products/Release/shadow_sentinel.app`
 
@@ -101,6 +107,7 @@ lib/
 ## State Management
 
 Uses **Provider** (`ChangeNotifierProvider`) with a single `SentinelProvider` that:
+
 - Manages 7 independent `Timer` instances for simulated real-time data
 - Smoothly interpolates the trust score for fluid UI updates
 - Generates security events from 15 templates with randomized parameters
@@ -128,13 +135,13 @@ void connectStreams({
 
 ## Dependencies
 
-| Package | Version | Purpose |
-|---------|---------|---------|
-| `provider` | ^6.1.2 | State management |
-| `google_fonts` | ^6.2.1 | Inter + JetBrains Mono |
-| `ffi` | ^2.1.3 | Native keyboard hook bridge |
-| `fl_chart` | ^0.69.2 | Future chart widgets |
-| `intl` | ^0.19.0 | Timestamp formatting |
+| Package        | Version | Purpose                     |
+| -------------- | ------- | --------------------------- |
+| `provider`     | ^6.1.2  | State management            |
+| `google_fonts` | ^6.2.1  | Inter + JetBrains Mono      |
+| `ffi`          | ^2.1.3  | Native keyboard hook bridge |
+| `fl_chart`     | ^0.69.2 | Future chart widgets        |
+| `intl`         | ^0.19.0 | Timestamp formatting        |
 
 ---
 
