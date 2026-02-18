@@ -92,9 +92,12 @@ class _ChunkEntry extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final provider = context.watch<VoiceSentinelProvider>();
     final color = _severityColor(chunk.severity);
     final elapsed = DateTime.now().difference(chunk.timestamp);
     final timeAgo = _formatElapsed(elapsed);
+    final isCurrentlyPlaying =
+        provider.isPlaying && provider.playingChunkPath == chunk.filePath;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 6),
@@ -160,6 +163,44 @@ class _ChunkEntry extends StatelessWidget {
                       ),
                     ),
                     const Spacer(),
+                    // Play/Stop button
+                    Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        onTap: () {
+                          if (isCurrentlyPlaying) {
+                            provider.stopPlayback();
+                          } else {
+                            provider.playChunk(chunk.filePath);
+                          }
+                        },
+                        borderRadius: BorderRadius.circular(4),
+                        child: Container(
+                          padding: const EdgeInsets.all(3),
+                          decoration: BoxDecoration(
+                            color: isCurrentlyPlaying
+                                ? SentinelTheme.cyberBlue.withValues(alpha: 0.15)
+                                : SentinelTheme.surface,
+                            borderRadius: BorderRadius.circular(4),
+                            border: Border.all(
+                              color: isCurrentlyPlaying
+                                  ? SentinelTheme.cyberBlue.withValues(alpha: 0.4)
+                                  : SentinelTheme.border,
+                            ),
+                          ),
+                          child: Icon(
+                            isCurrentlyPlaying
+                                ? Icons.stop_rounded
+                                : Icons.play_arrow_rounded,
+                            size: 14,
+                            color: isCurrentlyPlaying
+                                ? SentinelTheme.cyberBlue
+                                : SentinelTheme.textMuted,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
                     Text(
                       timeAgo,
                       style: SentinelTheme.mono.copyWith(

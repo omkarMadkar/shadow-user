@@ -2,19 +2,26 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'providers/sentinel_provider.dart';
 import 'providers/voice_sentinel_provider.dart';
+import 'providers/auth_provider.dart';
 import 'theme/sentinel_theme.dart';
 import 'screens/dashboard_screen.dart';
 import 'screens/email_threat_screen.dart';
 import 'screens/neural_camera_screen.dart';
 import 'screens/voice_sentinel_screen.dart';
+import 'screens/login_screen.dart';
 import 'widgets/sentinel_header.dart';
 
-void main() {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Initialise auth (tries Firebase, falls back to demo mode)
+  final authProvider = AuthProvider();
+  await authProvider.initialize();
 
   runApp(
     MultiProvider(
       providers: [
+        ChangeNotifierProvider.value(value: authProvider),
         ChangeNotifierProvider(create: (_) => SentinelProvider()),
         ChangeNotifierProvider(create: (_) => VoiceSentinelProvider()),
       ],
@@ -32,8 +39,54 @@ class ShadowSentinelApp extends StatelessWidget {
       title: 'Shadow Sentinel',
       debugShowCheckedModeBanner: false,
       theme: SentinelTheme.darkTheme,
-      home: const MainShell(),
+      home: const _AuthGate(),
     );
+  }
+}
+
+/// Redirects to [LoginScreen] or [MainShell] based on auth state.
+class _AuthGate extends StatelessWidget {
+  const _AuthGate();
+
+  @override
+  Widget build(BuildContext context) {
+    final auth = context.watch<AuthProvider>();
+
+    if (auth.isLoading) {
+      return Scaffold(
+        backgroundColor: SentinelTheme.bg,
+        body: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox(
+                width: 40,
+                height: 40,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: SentinelTheme.cyberBlue,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'INITIALISING SHADOW SENTINEL…',
+                style: SentinelTheme.mono.copyWith(
+                  fontSize: 11,
+                  color: SentinelTheme.textMuted,
+                  letterSpacing: 2,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (!auth.isAuthenticated) {
+      return const LoginScreen();
+    }
+
+    return const MainShell();
   }
 }
 

@@ -10,6 +10,9 @@ set(BINARY_NAME "shadow_sentinel")
 # versions of CMake.
 cmake_policy(VERSION 3.14...3.25)
 
+# Allow Firebase C++ SDK and other deps that use older cmake_minimum_required.
+set(CMAKE_POLICY_VERSION_MINIMUM 3.5 CACHE STRING "" FORCE)
+
 # Define build configuration option.
 get_property(IS_MULTICONFIG GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
 if(IS_MULTICONFIG)

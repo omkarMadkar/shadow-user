@@ -1,15 +1,37 @@
 import 'dart:async';
 import 'dart:math';
+import 'dart:io';
 import 'package:drift/drift.dart';
 import 'package:flutter/foundation.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:path/path.dart' as p;
+import 'package:record/record.dart';
+import 'package:audioplayers/audioplayers.dart';
 import '../models/models.dart';
 import '../database/voice_database.dart';
 
 /// Voice Sentinel provider — manages mic monitoring, language analysis,
 /// waveform data, and persists voice sessions/alerts to SQLite via Drift.
+///
+/// Supports **real microphone recording** via the `record` package and
+/// **audio playback** via `audioplayers`. When the mic is toggled on,
+/// the provider records actual audio from the default input device,
+/// saves .wav chunks to disk, and feeds amplitude data into the waveform.
 class VoiceSentinelProvider extends ChangeNotifier {
   final Random _rng = Random();
   final VoiceDatabase _db = VoiceDatabase();
+
+  // ── Real Recording ───────────────────────────────────────
+  final AudioRecorder _recorder = AudioRecorder();
+  final AudioPlayer _player = AudioPlayer();
+  String? _chunksDir;
+
+  /// Currently playing chunk file path (null if not playing).
+  String? _playingChunkPath;
+  String? get playingChunkPath => _playingChunkPath;
+
+  bool _isPlaying = false;
+  bool get isPlaying => _isPlaying;
 
   // ── Mic State ────────────────────────────────────────────
   bool _micActive = false;
@@ -165,6 +187,22 @@ class VoiceSentinelProvider extends ChangeNotifier {
 
   VoiceSentinelProvider() {
     _loadPersistedData();
+    _initChunksDir();
+    _player.onPlayerComplete.listen((_) {
+      _isPlaying = false;
+      _playingChunkPath = null;
+      notifyListeners();
+    });
+  }
+
+  /// Ensure the chunks directory exists.
+  Future<void> _initChunksDir() async {
+    final appDir = await getApplicationDocumentsDirectory();
+    _chunksDir = p.join(appDir.path, 'shadow_sentinel', 'voice_chunks');
+    final dir = Directory(_chunksDir!);
+    if (!await dir.exists()) {
+      await dir.create(recursive: true);
+    }
   }
 
   Future<void> _loadPersistedData() async {
@@ -215,13 +253,52 @@ class VoiceSentinelProvider extends ChangeNotifier {
 
     _sessionsCount++;
 
+    // Start real microphone recording
+    await _startRealRecording();
+
     _startSimulation();
     notifyListeners();
+  }
+
+  /// Starts the real microphone via the `record` package.
+  Future<void> _startRealRecording() async {
+    try {
+      final hasPermission = await _recorder.hasPermission();
+      if (!hasPermission) {
+        debugPrint('[VoiceSentinel] Microphone permission denied');
+        return;
+      }
+
+      // Ensure chunks dir is ready
+      if (_chunksDir == null) await _initChunksDir();
+
+      // Start recording the main session file
+      final sessionFile = p.join(_chunksDir!, '$_currentSessionId.wav');
+      await _recorder.start(
+        const RecordConfig(
+          encoder: AudioEncoder.wav,
+          sampleRate: 16000,
+          numChannels: 1,
+        ),
+        path: sessionFile,
+      );
+      debugPrint('[VoiceSentinel] Recording started → $sessionFile');
+    } catch (e) {
+      debugPrint('[VoiceSentinel] Failed to start recording: $e');
+    }
   }
 
   Future<void> stopRecording() async {
     _micActive = false;
     _sessionStatus = VoiceSessionStatus.completed;
+
+    // Stop real microphone recording
+    try {
+      final recordedPath = await _recorder.stop();
+      debugPrint('[VoiceSentinel] Recording stopped → $recordedPath');
+    } catch (e) {
+      debugPrint('[VoiceSentinel] Error stopping recording: $e');
+    }
 
     // Update session in DB
     if (_currentSessionId != null) {
@@ -241,6 +318,55 @@ class VoiceSentinelProvider extends ChangeNotifier {
     _stopSimulation();
     _currentVolume = 0.0;
     notifyListeners();
+  }
+
+  // ── Playback ─────────────────────────────────────────────
+
+  /// Play a recorded audio chunk file.
+  Future<void> playChunk(String filePath) async {
+    try {
+      // Resolve absolute path
+      String absPath = filePath;
+      if (!p.isAbsolute(filePath) && _chunksDir != null) {
+        absPath = p.join(_chunksDir!, p.basename(filePath));
+      }
+
+      if (!File(absPath).existsSync()) {
+        debugPrint('[VoiceSentinel] File not found: $absPath');
+        return;
+      }
+
+      // Stop any current playback
+      if (_isPlaying) {
+        await _player.stop();
+      }
+
+      _playingChunkPath = filePath;
+      _isPlaying = true;
+      notifyListeners();
+
+      await _player.play(DeviceFileSource(absPath));
+    } catch (e) {
+      debugPrint('[VoiceSentinel] Playback error: $e');
+      _isPlaying = false;
+      _playingChunkPath = null;
+      notifyListeners();
+    }
+  }
+
+  /// Stop audio playback.
+  Future<void> stopPlayback() async {
+    await _player.stop();
+    _isPlaying = false;
+    _playingChunkPath = null;
+    notifyListeners();
+  }
+
+  /// Play the full session recording.
+  Future<void> playSession(String sessionId) async {
+    if (_chunksDir == null) return;
+    final sessionFile = p.join(_chunksDir!, '$sessionId.wav');
+    await playChunk(sessionFile);
   }
 
   // ────────────────────────────────────────────────────────
@@ -286,11 +412,26 @@ class VoiceSentinelProvider extends ChangeNotifier {
 
   // ── Waveform ─────────────────────────────────────────────
 
-  void _updateWaveform() {
-    // Simulate realistic audio waveform amplitudes
-    final base = 0.2 + _rng.nextDouble() * 0.3;
-    final spike = _rng.nextDouble() > 0.85 ? _rng.nextDouble() * 0.5 : 0.0;
-    final amplitude = (base + spike).clamp(0.0, 1.0);
+  void _updateWaveform() async {
+    double amplitude;
+
+    // Try to get real amplitude from the recorder
+    try {
+      final amp = await _recorder.getAmplitude();
+      // amp.current is in dBFS (negative, e.g. -30 to 0)
+      // Normalise to 0.0 – 1.0
+      final dbfs = amp.current;
+      if (dbfs.isFinite && dbfs > -60) {
+        amplitude = ((dbfs + 60) / 60).clamp(0.0, 1.0);
+      } else {
+        amplitude = 0.0;
+      }
+    } catch (_) {
+      // Fallback to simulation
+      final base = 0.2 + _rng.nextDouble() * 0.3;
+      final spike = _rng.nextDouble() > 0.85 ? _rng.nextDouble() * 0.5 : 0.0;
+      amplitude = (base + spike).clamp(0.0, 1.0);
+    }
 
     _currentVolume = amplitude * 100;
     _avgVolume = _avgVolume * 0.95 + _currentVolume * 0.05;
@@ -339,10 +480,15 @@ class VoiceSentinelProvider extends ChangeNotifier {
                 _flaggedWordSamples[_rng.nextInt(_flaggedWordSamples.length)],
           );
 
+    // Real file path — the main session .wav contains the full audio
+    final chunkFilePath = _chunksDir != null
+        ? p.join(_chunksDir!, '$_currentSessionId.wav')
+        : 'chunks/$chunkId.wav';
+
     final chunk = VoiceAudioChunk(
       id: chunkId,
       sessionId: _currentSessionId!,
-      filePath: 'chunks/$chunkId.wav',
+      filePath: chunkFilePath,
       duration: Duration(seconds: 3 + _rng.nextInt(8)),
       timestamp: DateTime.now(),
       volumeDb: -20.0 + _rng.nextDouble() * 15,
@@ -360,7 +506,7 @@ class VoiceSentinelProvider extends ChangeNotifier {
       VoiceChunksCompanion.insert(
         id: chunkId,
         sessionId: _currentSessionId!,
-        filePath: chunk.filePath,
+        filePath: chunkFilePath,
         durationMs: chunk.duration.inMilliseconds,
         timestamp: chunk.timestamp,
         volumeDb: chunk.volumeDb,
@@ -485,6 +631,8 @@ class VoiceSentinelProvider extends ChangeNotifier {
   @override
   void dispose() {
     _stopSimulation();
+    _recorder.dispose();
+    _player.dispose();
     _db.close();
     super.dispose();
   }
