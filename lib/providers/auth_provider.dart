@@ -169,10 +169,7 @@ class AuthProvider extends ChangeNotifier {
   /// mode. On mobile / web, uses the google_sign_in plugin.
   Future<void> signInWithGoogle() async {
     if (!_isFirebaseAvailable) {
-      await signInDemo(
-        name: 'Google User',
-        email: 'user@gmail.com',
-      );
+      await signInDemo(name: 'Google User', email: 'user@gmail.com');
       return;
     }
 
@@ -187,10 +184,7 @@ class AuthProvider extends ChangeNotifier {
       if (defaultTargetPlatform == TargetPlatform.windows) {
         // On Windows, use signInWithPopup for web-hosted apps,
         // or fall back to demo mode for native desktop.
-        await signInDemo(
-          name: 'Google User',
-          email: 'user@gmail.com',
-        );
+        await signInDemo(name: 'Google User', email: 'user@gmail.com');
         return;
       }
 
@@ -285,13 +279,13 @@ class AuthProvider extends ChangeNotifier {
             .collection('users')
             .doc(fbUser.uid)
             .set({
-          'displayName': fbUser.displayName ?? 'User',
-          'email': fbUser.email ?? '',
-          'photoUrl': fbUser.photoURL,
-          'role': UserRole.viewer.name,
-          'createdAt': FieldValue.serverTimestamp(),
-          'lastLogin': FieldValue.serverTimestamp(),
-        });
+              'displayName': fbUser.displayName ?? 'User',
+              'email': fbUser.email ?? '',
+              'photoUrl': fbUser.photoURL,
+              'role': UserRole.viewer.name,
+              'createdAt': FieldValue.serverTimestamp(),
+              'lastLogin': FieldValue.serverTimestamp(),
+            });
       }
     } catch (_) {
       // Firestore unavailable — default to viewer
@@ -336,9 +330,8 @@ class AuthProvider extends ChangeNotifier {
           (r) => r.name == (prefs.getString('demo_role') ?? 'admin'),
           orElse: () => UserRole.admin,
         ),
-        lastLogin: DateTime.tryParse(
-              prefs.getString('demo_lastLogin') ?? '',
-            ) ??
+        lastLogin:
+            DateTime.tryParse(prefs.getString('demo_lastLogin') ?? '') ??
             DateTime.now(),
         isDemo: true,
       );

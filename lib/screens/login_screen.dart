@@ -89,10 +89,14 @@ class _LoginScreenState extends State<LoginScreen>
                           vertical: 6,
                         ),
                         decoration: BoxDecoration(
-                          color: SentinelTheme.alertAmber.withValues(alpha: 0.08),
+                          color: SentinelTheme.alertAmber.withValues(
+                            alpha: 0.08,
+                          ),
                           borderRadius: BorderRadius.circular(8),
                           border: Border.all(
-                            color: SentinelTheme.alertAmber.withValues(alpha: 0.2),
+                            color: SentinelTheme.alertAmber.withValues(
+                              alpha: 0.2,
+                            ),
                           ),
                         ),
                         child: Row(
@@ -514,9 +518,7 @@ class _LoginScreenState extends State<LoginScreen>
           child: GestureDetector(
             onTap: () => setState(() => _selectedRole = role),
             child: Container(
-              margin: EdgeInsets.only(
-                right: role != UserRole.viewer ? 8 : 0,
-              ),
+              margin: EdgeInsets.only(right: role != UserRole.viewer ? 8 : 0),
               padding: const EdgeInsets.symmetric(vertical: 10),
               decoration: BoxDecoration(
                 color: isSelected
@@ -541,8 +543,9 @@ class _LoginScreenState extends State<LoginScreen>
                     role.label,
                     style: SentinelTheme.mono.copyWith(
                       fontSize: 9,
-                      fontWeight:
-                          isSelected ? FontWeight.w700 : FontWeight.w400,
+                      fontWeight: isSelected
+                          ? FontWeight.w700
+                          : FontWeight.w400,
                       color: isSelected ? color : SentinelTheme.textMuted,
                       letterSpacing: 0.5,
                     ),
@@ -569,10 +572,7 @@ class _LoginScreenState extends State<LoginScreen>
           padding: const EdgeInsets.symmetric(vertical: 14),
           decoration: BoxDecoration(
             gradient: LinearGradient(
-              colors: [
-                SentinelTheme.cyberBlue,
-                SentinelTheme.cyberCyan,
-              ],
+              colors: [SentinelTheme.cyberBlue, SentinelTheme.cyberCyan],
             ),
             borderRadius: BorderRadius.circular(10),
             boxShadow: [

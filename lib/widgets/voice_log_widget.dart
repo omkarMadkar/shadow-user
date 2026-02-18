@@ -179,12 +179,16 @@ class _ChunkEntry extends StatelessWidget {
                           padding: const EdgeInsets.all(3),
                           decoration: BoxDecoration(
                             color: isCurrentlyPlaying
-                                ? SentinelTheme.cyberBlue.withValues(alpha: 0.15)
+                                ? SentinelTheme.cyberBlue.withValues(
+                                    alpha: 0.15,
+                                  )
                                 : SentinelTheme.surface,
                             borderRadius: BorderRadius.circular(4),
                             border: Border.all(
                               color: isCurrentlyPlaying
-                                  ? SentinelTheme.cyberBlue.withValues(alpha: 0.4)
+                                  ? SentinelTheme.cyberBlue.withValues(
+                                      alpha: 0.4,
+                                    )
                                   : SentinelTheme.border,
                             ),
                           ),

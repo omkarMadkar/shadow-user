@@ -48,11 +48,13 @@ class UserProfile {
   });
 
   String get initials {
-    final parts = displayName.trim().split(' ');
+    final name = displayName.trim();
+    if (name.isEmpty) return '??';
+    final parts = name.split(' ').where((p) => p.isNotEmpty).toList();
     if (parts.length >= 2) {
       return '${parts.first[0]}${parts.last[0]}'.toUpperCase();
     }
-    return displayName.substring(0, displayName.length >= 2 ? 2 : 1).toUpperCase();
+    return name.substring(0, name.length >= 2 ? 2 : 1).toUpperCase();
   }
 
   UserProfile copyWith({

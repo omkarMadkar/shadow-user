@@ -34,9 +34,7 @@ class _SentinelHeaderState extends State<SentinelHeader> {
     return Container(
       decoration: BoxDecoration(
         color: SentinelTheme.surface.withValues(alpha: 0.9),
-        border: Border(
-          bottom: BorderSide(color: SentinelTheme.border),
-        ),
+        border: Border(bottom: BorderSide(color: SentinelTheme.border)),
       ),
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
       child: Row(
@@ -48,7 +46,9 @@ class _SentinelHeaderState extends State<SentinelHeader> {
             decoration: BoxDecoration(
               color: SentinelTheme.surface,
               borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: SentinelTheme.cyberBlue.withValues(alpha: 0.3)),
+              border: Border.all(
+                color: SentinelTheme.cyberBlue.withValues(alpha: 0.3),
+              ),
               boxShadow: [
                 BoxShadow(
                   color: SentinelTheme.cyberBlue.withValues(alpha: 0.15),
@@ -172,10 +172,7 @@ class _StatusPill extends StatelessWidget {
           Container(
             width: 5,
             height: 5,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: color,
-            ),
+            decoration: BoxDecoration(shape: BoxShape.circle, color: color),
           ),
           const SizedBox(width: 5),
           Text(
@@ -270,9 +267,7 @@ class _UserProfileChip extends StatelessWidget {
                   decoration: BoxDecoration(
                     color: roleColor.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(4),
-                    border: Border.all(
-                      color: roleColor.withValues(alpha: 0.3),
-                    ),
+                    border: Border.all(color: roleColor.withValues(alpha: 0.3)),
                   ),
                   child: Text(
                     user.role.label,
@@ -353,9 +348,7 @@ class _UserProfileChip extends StatelessWidget {
       height: 34,
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(
-          color: _roleColor(user.role).withValues(alpha: 0.3),
-        ),
+        border: Border.all(color: _roleColor(user.role).withValues(alpha: 0.3)),
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(7),
@@ -390,4 +383,3 @@ class _UserProfileChip extends StatelessWidget {
     );
   }
 }
-
