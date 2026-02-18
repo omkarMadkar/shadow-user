@@ -1,0 +1,681 @@
+import 'dart:async';
+import 'dart:math';
+import 'package:flutter/foundation.dart';
+import '../models/models.dart';
+
+/// Central state management for the Shadow Sentinel dashboard.
+///
+/// Manages trust score, keystroke metrics, neural scan results,
+/// security events, productivity heatmap, threat data,
+/// email fraud detection, and neural camera detection.
+class SentinelProvider extends ChangeNotifier {
+  final Random _rng = Random();
+
+  // ── Trust Score ──────────────────────────────────────────
+  double _trustScore = 87.0;
+  double _targetTrust = 87.0;
+  double get trustScore => _trustScore;
+
+  // ── Module States ────────────────────────────────────────
+  final SentinelModuleState _keystrokeState = SentinelModuleState.active;
+  SentinelModuleState _cameraState = SentinelModuleState.active;
+  SentinelModuleState get keystrokeState => _keystrokeState;
+  SentinelModuleState get cameraState => _cameraState;
+
+  // ── Keystroke Metrics ────────────────────────────────────
+  KeystrokeMetrics _keystrokeMetrics = KeystrokeMetrics(
+    cadenceWpm: 142,
+    patternDrift: 0.024,
+    holdTimeMean: 85.3,
+    flightTimeMean: 112.7,
+    timestamp: DateTime.now(),
+  );
+  KeystrokeMetrics get keystrokeMetrics => _keystrokeMetrics;
+
+  // ── Camera Polling ───────────────────────────────────────
+  int _cameraCountdown = 28;
+  int get cameraCountdown => _cameraCountdown;
+  String _lastCapture = '12s ago';
+  String get lastCapture => _lastCapture;
+  double _cameraConfidence = 96.2;
+  double get cameraConfidence => _cameraConfidence;
+
+  // ── Security Events ──────────────────────────────────────
+  final List<SecurityEvent> _events = [];
+  List<SecurityEvent> get events => List.unmodifiable(_events);
+
+  // ── Threats ──────────────────────────────────────────────
+  final List<ThreatInfo> _threats = [
+    ThreatInfo(label: 'Shadow Users', count: 3, trend: 'up', severity: ThreatSeverity.high),
+    ThreatInfo(label: 'Proxy Tunnels', count: 1, trend: 'down', severity: ThreatSeverity.critical),
+    ThreatInfo(label: 'Device Anomalies', count: 7, trend: 'up', severity: ThreatSeverity.medium),
+    ThreatInfo(label: 'Auth Failures', count: 12, trend: 'stable', severity: ThreatSeverity.low),
+  ];
+  List<ThreatInfo> get threats => _threats;
+
+  // ── Online Users ─────────────────────────────────────────
+  final List<OnlineUser> _onlineUsers = const [
+    OnlineUser(name: 'A. Sharma', trustScore: 94, status: UserVerificationStatus.verified, department: 'Engineering'),
+    OnlineUser(name: 'M. Chen', trustScore: 87, status: UserVerificationStatus.verified, department: 'Design'),
+    OnlineUser(name: 'J. Davis', trustScore: 62, status: UserVerificationStatus.monitoring, department: 'Marketing'),
+    OnlineUser(name: 'S. Kim', trustScore: 45, status: UserVerificationStatus.flagged, department: 'Sales'),
+    OnlineUser(name: 'R. Patel', trustScore: 91, status: UserVerificationStatus.verified, department: 'Engineering'),
+  ];
+  List<OnlineUser> get onlineUsers => _onlineUsers;
+
+  // ── Productivity Heatmap ─────────────────────────────────
+  late List<List<ProductivitySlot>> _heatmapData;
+  List<List<ProductivitySlot>> get heatmapData => _heatmapData;
+
+  // ══════════════════════════════════════════════════════════
+  // EMAIL FRAUD DETECTION
+  // ══════════════════════════════════════════════════════════
+
+  static const String userEmail = 'pruthvirajrajput353@gmail.com';
+
+  final List<EmailThreat> _emailThreats = [];
+  List<EmailThreat> get emailThreats => List.unmodifiable(_emailThreats);
+
+  int _totalScanned = 247;
+  int _threatsBlocked = 18;
+  int _safeEmails = 221;
+  int _quarantined = 8;
+  int _pendingReview = 3;
+
+  int get totalScanned => _totalScanned;
+  int get threatsBlocked => _threatsBlocked;
+  int get safeEmailsCount => _safeEmails;
+  int get quarantinedCount => _quarantined;
+  int get pendingReviewCount => _pendingReview;
+
+  final Map<EmailThreatType, int> _threatBreakdown = {
+    EmailThreatType.phishing: 7,
+    EmailThreatType.malware: 3,
+    EmailThreatType.spoofing: 4,
+    EmailThreatType.spam: 9,
+    EmailThreatType.suspicious: 2,
+  };
+  Map<EmailThreatType, int> get threatBreakdown => Map.unmodifiable(_threatBreakdown);
+
+  bool _emailScanActive = true;
+  bool get emailScanActive => _emailScanActive;
+  void toggleEmailScan() {
+    _emailScanActive = !_emailScanActive;
+    notifyListeners();
+  }
+
+  // ══════════════════════════════════════════════════════════
+  // NEURAL CAMERA DETECTION
+  // ══════════════════════════════════════════════════════════
+
+  FaceScanFrame _currentFrame = FaceScanFrame(
+    confidence: 96.2,
+    livenessScore: 98.1,
+    matched: true,
+    spoofingAttempt: false,
+    timestamp: DateTime.now(),
+    scanMode: 'CONTINUOUS',
+  );
+  FaceScanFrame get currentFrame => _currentFrame;
+
+  final List<CameraSessionLog> _cameraLogs = [];
+  List<CameraSessionLog> get cameraLogs => List.unmodifiable(_cameraLogs);
+
+  int _totalFramesAnalyzed = 1842;
+  int get totalFramesAnalyzed => _totalFramesAnalyzed;
+
+  int _spoofingAttempts = 2;
+  int get spoofingAttempts => _spoofingAttempts;
+
+  double _avgConfidence = 95.7;
+  double get avgConfidence => _avgConfidence;
+
+  bool _neuralScanActive = true;
+  bool get neuralScanActive => _neuralScanActive;
+  void toggleNeuralScan() {
+    _neuralScanActive = !_neuralScanActive;
+    notifyListeners();
+  }
+
+  // ── Timers ───────────────────────────────────────────────
+  Timer? _trustTimer;
+  Timer? _trustInterp;
+  Timer? _keystrokeTimer;
+  Timer? _cameraTimer;
+  Timer? _eventTimer;
+  Timer? _threatTimer;
+  Timer? _heatmapTimer;
+  Timer? _emailTimer;
+  Timer? _neuralTimer;
+  Timer? _neuralLogTimer;
+
+  // ────────────────────────────────────────────────────────
+  // Initialization
+  // ────────────────────────────────────────────────────────
+
+  SentinelProvider() {
+    _initHeatmap();
+    _generateInitialEvents();
+    _generateInitialEmailThreats();
+    _generateInitialCameraLogs();
+    _startSimulation();
+  }
+
+  void _initHeatmap() {
+    _heatmapData = List.generate(5, (day) {
+      return List.generate(13, (hour) {
+        ProductivityState state;
+        if (hour < 1 || hour > 11) {
+          state = ProductivityState.offline;
+        } else {
+          final r = _rng.nextDouble();
+          if (r > 0.7) {
+            state = ProductivityState.deepWork;
+          } else if (r > 0.4) {
+            state = ProductivityState.focused;
+          } else if (r > 0.15) {
+            state = ProductivityState.distracted;
+          } else {
+            state = ProductivityState.burnoutRisk;
+          }
+        }
+        return ProductivitySlot(
+          state: state,
+          intensity: state == ProductivityState.offline ? 0.3 : 0.5 + _rng.nextDouble() * 0.5,
+          dayIndex: day,
+          hourIndex: hour,
+        );
+      });
+    });
+  }
+
+  // ────────────────────────────────────────────────────────
+  // Event Templates
+  // ────────────────────────────────────────────────────────
+
+  static const List<Map<String, String>> _eventTemplates = [
+    {'type': 'info', 'msg': 'Keystroke pattern validated — confidence {val}%'},
+    {'type': 'success', 'msg': 'User verified: Biometric face match ({val}% similarity)'},
+    {'type': 'warning', 'msg': 'Anomaly detected: Typing rhythm deviation ({val}%)'},
+    {'type': 'info', 'msg': 'Deep work session detected — {val} min continuous focus'},
+    {'type': 'error', 'msg': 'ALERT: Unknown device fingerprint — IP {ip}'},
+    {'type': 'success', 'msg': 'Periodic neural scan passed — identity confirmed'},
+    {'type': 'warning', 'msg': 'Burnout risk elevated: fatigue index at {val}%'},
+    {'type': 'info', 'msg': 'Keystroke cadence stable — avg latency {val}ms'},
+    {'type': 'error', 'msg': 'CRITICAL: Proxy tunnel detected on port {val}'},
+    {'type': 'success', 'msg': 'Camera polling: frame captured — no anomalies'},
+    {'type': 'warning', 'msg': 'Typing pattern shift: possible user switch ({val}% drift)'},
+    {'type': 'info', 'msg': 'Session heartbeat — all sentinel modules nominal'},
+    {'type': 'info', 'msg': 'Behavioral baseline updated — model v2.{val}'},
+    {'type': 'error', 'msg': 'ALERT: Multiple authentication failures from {ip}'},
+    {'type': 'success', 'msg': 'Zero Trust check passed — device compliant'},
+  ];
+
+  static const List<String> _ips = [
+    '192.168.1.42',
+    '10.0.0.15',
+    '172.16.0.88',
+    '203.0.113.7',
+    '198.51.100.12',
+  ];
+
+  SecurityEvent _generateEvent() {
+    final template = _eventTemplates[_rng.nextInt(_eventTemplates.length)];
+    final val = _rng.nextInt(60) + 40;
+    final ip = _ips[_rng.nextInt(_ips.length)];
+    final message = template['msg']!
+        .replaceAll('{val}', val.toString())
+        .replaceAll('{ip}', ip);
+
+    ThreatSeverity severity;
+    switch (template['type']) {
+      case 'error':
+        severity = ThreatSeverity.critical;
+        break;
+      case 'warning':
+        severity = ThreatSeverity.high;
+        break;
+      case 'success':
+        severity = ThreatSeverity.low;
+        break;
+      default:
+        severity = ThreatSeverity.medium;
+    }
+
+    return SecurityEvent(
+      id: '${DateTime.now().millisecondsSinceEpoch}-${_rng.nextInt(9999)}',
+      message: message,
+      severity: severity,
+      timestamp: DateTime.now(),
+    );
+  }
+
+  void _generateInitialEvents() {
+    for (int i = 0; i < 10; i++) {
+      _events.add(_generateEvent());
+    }
+  }
+
+  // ────────────────────────────────────────────────────────
+  // Email Fraud Simulation Data
+  // ────────────────────────────────────────────────────────
+
+  static const List<Map<String, dynamic>> _emailThreatTemplates = [
+    {
+      'sender': 'security-alert@paypa1.com',
+      'domain': 'paypa1.com',
+      'subject': 'Urgent: Your account has been compromised',
+      'type': 'phishing',
+      'detail': 'Sender domain typosquats paypal.com. Contains credential harvesting link.',
+      'indicators': ['Domain spoofing', 'Urgency language', 'Suspicious link'],
+    },
+    {
+      'sender': 'noreply@amaz0n-security.net',
+      'domain': 'amaz0n-security.net',
+      'subject': 'Order #3847291 - Payment declined, action required',
+      'type': 'phishing',
+      'detail': 'Fake order notification. Links redirect to phishing page.',
+      'indicators': ['Fake domain', 'Social engineering', 'Credential harvesting'],
+    },
+    {
+      'sender': 'admin@company-docs.ru',
+      'domain': 'company-docs.ru',
+      'subject': 'Shared document: Q4_Financial_Report.xlsx',
+      'type': 'malware',
+      'detail': 'Attachment contains macro-enabled malware (Trojan.GenericKD).',
+      'indicators': ['Malicious attachment', 'Macro payload', 'Unknown sender'],
+    },
+    {
+      'sender': 'pruthviraj.rajput@g00gle.com',
+      'domain': 'g00gle.com',
+      'subject': 'Re: Meeting notes from yesterday',
+      'type': 'spoofing',
+      'detail': 'Sender impersonating user identity. SPF/DKIM check failed.',
+      'indicators': ['Identity spoofing', 'SPF fail', 'DKIM mismatch'],
+    },
+    {
+      'sender': 'winner@mega-lottery-intl.com',
+      'domain': 'mega-lottery-intl.com',
+      'subject': 'Congratulations! You have won ₹50,00,000',
+      'type': 'spam',
+      'detail': 'Advance fee fraud. Requests personal banking details.',
+      'indicators': ['Scam pattern', 'Financial bait', 'Unknown origin'],
+    },
+    {
+      'sender': 'support@microsoft-verify.xyz',
+      'domain': 'microsoft-verify.xyz',
+      'subject': 'Your Microsoft 365 subscription expires today',
+      'type': 'phishing',
+      'detail': 'Fake subscription renewal page. Harvests credit card data.',
+      'indicators': ['Brand impersonation', 'Urgency tactics', 'Card harvesting'],
+    },
+    {
+      'sender': 'hr@trusted-careers.info',
+      'domain': 'trusted-careers.info',
+      'subject': 'Job Offer: Senior Developer - ₹45 LPA (Remote)',
+      'type': 'spam',
+      'detail': 'Fake job offer. Collects personal data for identity theft.',
+      'indicators': ['Too-good-to-be-true', 'Data harvesting', 'No company verification'],
+    },
+    {
+      'sender': 'invoice@quickbooks-billing.net',
+      'domain': 'quickbooks-billing.net',
+      'subject': 'Invoice #INV-2947 attached - Payment overdue',
+      'type': 'malware',
+      'detail': 'PDF attachment exploits CVE-2024-XXXX. Contains ransomware dropper.',
+      'indicators': ['Exploit payload', 'Ransomware dropper', 'Fake invoice'],
+    },
+    {
+      'sender': 'notifications@instagram-verify.com',
+      'domain': 'instagram-verify.com',
+      'subject': 'Someone tried to log into your Instagram',
+      'type': 'phishing',
+      'detail': 'Fake login alert. Redirects to credential phishing page.',
+      'indicators': ['Social media impersonation', 'Login phishing', 'Fake alert'],
+    },
+    {
+      'sender': 'delivery@fedex-tracking.biz',
+      'domain': 'fedex-tracking.biz',
+      'subject': 'Your package delivery failed - reschedule now',
+      'type': 'suspicious',
+      'detail': 'Suspicious link to unknown tracking portal. Under analysis.',
+      'indicators': ['Brand impersonation', 'Suspicious redirect', 'Under review'],
+    },
+    {
+      'sender': 'contact@tech-update-center.org',
+      'domain': 'tech-update-center.org',
+      'subject': 'Critical Chrome update required immediately',
+      'type': 'malware',
+      'detail': 'Links to malicious .exe disguised as browser update.',
+      'indicators': ['Fake update', 'Malware download', 'Social engineering'],
+    },
+    {
+      'sender': 'rewards@flipkart-offers.co',
+      'domain': 'flipkart-offers.co',
+      'subject': 'Exclusive: ₹5000 reward for loyal customers',
+      'type': 'phishing',
+      'detail': 'Phishing campaign targeting Indian e-commerce users.',
+      'indicators': ['Reward scam', 'Data harvesting', 'Fake domain'],
+    },
+  ];
+
+  EmailThreat _generateEmailThreat() {
+    final template = _emailThreatTemplates[_rng.nextInt(_emailThreatTemplates.length)];
+
+    EmailThreatType type;
+    switch (template['type']) {
+      case 'phishing':
+        type = EmailThreatType.phishing;
+        break;
+      case 'malware':
+        type = EmailThreatType.malware;
+        break;
+      case 'spoofing':
+        type = EmailThreatType.spoofing;
+        break;
+      case 'spam':
+        type = EmailThreatType.spam;
+        break;
+      default:
+        type = EmailThreatType.suspicious;
+    }
+
+    final riskScore = 0.55 + _rng.nextDouble() * 0.44;
+
+    EmailThreatStatus status;
+    if (riskScore > 0.85) {
+      status = EmailThreatStatus.blocked;
+    } else if (riskScore > 0.7) {
+      status = EmailThreatStatus.quarantined;
+    } else {
+      status = EmailThreatStatus.flagged;
+    }
+
+    return EmailThreat(
+      id: 'EM-${DateTime.now().millisecondsSinceEpoch}-${_rng.nextInt(9999)}',
+      sender: template['sender'] as String,
+      senderDomain: template['domain'] as String,
+      subject: template['subject'] as String,
+      recipient: userEmail,
+      threatType: type,
+      status: status,
+      riskScore: riskScore,
+      timestamp: DateTime.now(),
+      analysisDetail: template['detail'] as String,
+      indicators: List<String>.from(template['indicators'] as List),
+    );
+  }
+
+  void _generateInitialEmailThreats() {
+    for (int i = 0; i < 8; i++) {
+      _emailThreats.add(_generateEmailThreat());
+    }
+  }
+
+  // ────────────────────────────────────────────────────────
+  // Neural Camera Simulation Data
+  // ────────────────────────────────────────────────────────
+
+  static const List<String> _scanModes = [
+    'CONTINUOUS', 'DEEP_SCAN', 'LIVENESS_CHECK', 'IDENTITY_VERIFY', 'ANTI_SPOOF'
+  ];
+
+  static const List<String> _cameraLogDetails = [
+    'Face match confirmed — identity verified at {val}% confidence',
+    'Liveness check passed — eye movement detected, score {val}%',
+    'Deep scan complete — facial geometry matched baseline model',
+    'Anti-spoofing check: Real face detected (not photo/mask)',
+    'Continuous monitoring — no anomalies in last {val} frames',
+    'Identity re-verified after idle period — match confirmed',
+    'ALERT: Potential spoofing attempt — photo presentation detected',
+    'ALERT: Unknown face detected — initiating lockdown protocol',
+    'Micro-expression analysis complete — stress level normal',
+    'Infrared depth map validated — 3D face structure confirmed',
+  ];
+
+  CameraSessionLog _generateCameraLog({bool forceSpoofing = false}) {
+    final isSpoofing = forceSpoofing || _rng.nextDouble() < 0.08;
+    final confidence = isSpoofing ? 15.0 + _rng.nextDouble() * 30 : 88.0 + _rng.nextDouble() * 11.5;
+    final liveness = isSpoofing ? 10.0 + _rng.nextDouble() * 25 : 90.0 + _rng.nextDouble() * 9.5;
+    final val = _rng.nextInt(50) + 50;
+
+    String detail;
+    if (isSpoofing) {
+      detail = _rng.nextBool()
+          ? 'ALERT: Potential spoofing attempt — photo presentation detected'
+          : 'ALERT: Unknown face detected — initiating lockdown protocol';
+    } else {
+      final template = _cameraLogDetails[_rng.nextInt(_cameraLogDetails.length - 2)];
+      detail = template.replaceAll('{val}', val.toString());
+    }
+
+    return CameraSessionLog(
+      id: 'CAM-${DateTime.now().millisecondsSinceEpoch}-${_rng.nextInt(9999)}',
+      timestamp: DateTime.now(),
+      confidence: confidence,
+      livenessScore: liveness,
+      matched: !isSpoofing,
+      spoofingAttempt: isSpoofing,
+      detail: detail,
+    );
+  }
+
+  void _generateInitialCameraLogs() {
+    for (int i = 0; i < 12; i++) {
+      _cameraLogs.add(_generateCameraLog());
+    }
+  }
+
+  // ────────────────────────────────────────────────────────
+  // Simulation Engine
+  // ────────────────────────────────────────────────────────
+
+  void _startSimulation() {
+    // Trust score drift
+    _trustTimer = Timer.periodic(const Duration(seconds: 3), (_) {
+      final delta = (_rng.nextDouble() - 0.4) * 8;
+      _targetTrust = (_targetTrust + delta).clamp(35.0, 99.0);
+    });
+
+    // Smooth trust interpolation
+    _trustInterp = Timer.periodic(const Duration(milliseconds: 50), (_) {
+      final diff = _targetTrust - _trustScore;
+      if (diff.abs() < 0.3) {
+        _trustScore = _targetTrust;
+      } else {
+        _trustScore += diff * 0.06;
+      }
+      notifyListeners();
+    });
+
+    // Keystroke metrics update
+    _keystrokeTimer = Timer.periodic(const Duration(seconds: 2), (_) {
+      _keystrokeMetrics = KeystrokeMetrics(
+        cadenceWpm: 120 + _rng.nextDouble() * 40,
+        patternDrift: _rng.nextDouble() * 0.08,
+        holdTimeMean: 70 + _rng.nextDouble() * 30,
+        flightTimeMean: 90 + _rng.nextDouble() * 40,
+        timestamp: DateTime.now(),
+      );
+      notifyListeners();
+    });
+
+    // Camera countdown
+    _cameraTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      _cameraCountdown--;
+      if (_cameraCountdown <= 0) {
+        _cameraState = SentinelModuleState.capturing;
+        _lastCapture = 'just now';
+        _cameraConfidence = 90 + _rng.nextDouble() * 9.5;
+        notifyListeners();
+        Future.delayed(const Duration(milliseconds: 1200), () {
+          _cameraState = SentinelModuleState.active;
+          _cameraCountdown = 30;
+          notifyListeners();
+        });
+      } else {
+        notifyListeners();
+      }
+    });
+
+    // Event stream
+    _eventTimer = Timer.periodic(const Duration(milliseconds: 2500), (_) {
+      _events.insert(0, _generateEvent());
+      if (_events.length > 50) _events.removeLast();
+      notifyListeners();
+    });
+
+    // Threat counts
+    _threatTimer = Timer.periodic(const Duration(seconds: 8), (_) {
+      for (var t in _threats) {
+        t.count = max(0, t.count + _rng.nextInt(3) - 1);
+      }
+      notifyListeners();
+    });
+
+    // Heatmap micro-updates
+    _heatmapTimer = Timer.periodic(const Duration(seconds: 6), (_) {
+      final day = _rng.nextInt(5);
+      final hour = _rng.nextInt(11) + 1;
+      final r = _rng.nextDouble();
+      ProductivityState state;
+      if (r > 0.7) {
+        state = ProductivityState.deepWork;
+      } else if (r > 0.4) {
+        state = ProductivityState.focused;
+      } else if (r > 0.15) {
+        state = ProductivityState.distracted;
+      } else {
+        state = ProductivityState.burnoutRisk;
+      }
+      _heatmapData[day][hour] = ProductivitySlot(
+        state: state,
+        intensity: 0.5 + _rng.nextDouble() * 0.5,
+        dayIndex: day,
+        hourIndex: hour,
+      );
+      notifyListeners();
+    });
+
+    // ── Email Fraud Simulation ──────────────────────────────
+    _emailTimer = Timer.periodic(const Duration(seconds: 4), (_) {
+      if (!_emailScanActive) return;
+
+      // Increment scanned
+      _totalScanned += 1;
+
+      // 30% chance of a threat email
+      if (_rng.nextDouble() < 0.30) {
+        final threat = _generateEmailThreat();
+        _emailThreats.insert(0, threat);
+        if (_emailThreats.length > 30) _emailThreats.removeLast();
+
+        _threatsBlocked++;
+        _threatBreakdown[threat.threatType] =
+            (_threatBreakdown[threat.threatType] ?? 0) + 1;
+
+        if (threat.status == EmailThreatStatus.quarantined) {
+          _quarantined++;
+        }
+        if (threat.status == EmailThreatStatus.flagged) {
+          _pendingReview++;
+        }
+      } else {
+        _safeEmails++;
+      }
+      notifyListeners();
+    });
+
+    // ── Neural Camera Simulation ────────────────────────────
+    _neuralTimer = Timer.periodic(const Duration(milliseconds: 800), (_) {
+      if (!_neuralScanActive) return;
+
+      final isSpoofing = _rng.nextDouble() < 0.03;
+      final conf = isSpoofing ? 15 + _rng.nextDouble() * 30 : 88 + _rng.nextDouble() * 11.5;
+      final live = isSpoofing ? 10 + _rng.nextDouble() * 25 : 90 + _rng.nextDouble() * 9.5;
+
+      _currentFrame = FaceScanFrame(
+        confidence: conf,
+        livenessScore: live,
+        matched: !isSpoofing,
+        spoofingAttempt: isSpoofing,
+        timestamp: DateTime.now(),
+        scanMode: _scanModes[_rng.nextInt(_scanModes.length)],
+      );
+      _totalFramesAnalyzed++;
+      if (isSpoofing) _spoofingAttempts++;
+
+      // Running average
+      _avgConfidence = _avgConfidence * 0.99 + conf * 0.01;
+
+      notifyListeners();
+    });
+
+    // ── Camera Log Entries ──────────────────────────────────
+    _neuralLogTimer = Timer.periodic(const Duration(seconds: 3), (_) {
+      if (!_neuralScanActive) return;
+      final log = _generateCameraLog();
+      _cameraLogs.insert(0, log);
+      if (_cameraLogs.length > 40) _cameraLogs.removeLast();
+      notifyListeners();
+    });
+  }
+
+  // ────────────────────────────────────────────────────────
+  // Computed Stats
+  // ────────────────────────────────────────────────────────
+
+  int get totalThreats => _threats.fold<int>(0, (sum, t) => sum + t.count);
+
+  Map<String, int> get productivityStats {
+    int dw = 0, f = 0, d = 0, b = 0, total = 0;
+    for (final row in _heatmapData) {
+      for (final slot in row) {
+        if (slot.state == ProductivityState.offline) continue;
+        total++;
+        switch (slot.state) {
+          case ProductivityState.deepWork:
+            dw++;
+            break;
+          case ProductivityState.focused:
+            f++;
+            break;
+          case ProductivityState.distracted:
+            d++;
+            break;
+          case ProductivityState.burnoutRisk:
+            b++;
+            break;
+          default:
+            break;
+        }
+      }
+    }
+    if (total == 0) total = 1;
+    return {
+      'deepWork': ((dw / total) * 100).round(),
+      'focused': ((f / total) * 100).round(),
+      'distracted': ((d / total) * 100).round(),
+      'burnout': ((b / total) * 100).round(),
+    };
+  }
+
+  // ────────────────────────────────────────────────────────
+  // Cleanup
+  // ────────────────────────────────────────────────────────
+
+  @override
+  void dispose() {
+    _trustTimer?.cancel();
+    _trustInterp?.cancel();
+    _keystrokeTimer?.cancel();
+    _cameraTimer?.cancel();
+    _eventTimer?.cancel();
+    _threatTimer?.cancel();
+    _heatmapTimer?.cancel();
+    _emailTimer?.cancel();
+    _neuralTimer?.cancel();
+    _neuralLogTimer?.cancel();
+    super.dispose();
+  }
+}
