@@ -6,6 +6,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../firebase_options.dart';
 import '../models/user_profile.dart';
+import '../services/google_oauth_desktop.dart';
 
 /// Manages authentication state for Shadow Sentinel.
 ///
@@ -165,8 +166,10 @@ class AuthProvider extends ChangeNotifier {
   }
 
   /// Sign in with Google.
-  /// On Windows (when google_sign_in is not available), we fall back to demo
-  /// mode. On mobile / web, uses the google_sign_in plugin.
+  /// On Windows, uses a manual OAuth2 browser flow (PKCE) since the
+  /// `google_sign_in` plugin does not support Windows natively.
+  /// Opens the system browser → user signs in → redirect captured on
+  /// `localhost:8734` → tokens exchanged → Firebase credential created.
   Future<void> signInWithGoogle() async {
     if (!_isFirebaseAvailable) {
       await signInDemo(name: 'Google User', email: 'user@gmail.com');
@@ -178,23 +181,34 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      // google_sign_in doesn't support Windows natively.
-      // Use Firebase Auth's built-in Google provider via popup on web,
-      // or fall back to demo mode on desktop.
       if (defaultTargetPlatform == TargetPlatform.windows) {
-        // On Windows, use signInWithPopup for web-hosted apps,
-        // or fall back to demo mode for native desktop.
-        await signInDemo(name: 'Google User', email: 'user@gmail.com');
-        return;
-      }
+        // Desktop OAuth2 flow via system browser
+        final oauth = GoogleOAuthDesktop(
+          clientId:
+              '1054561929122-03seduj3qla01q79tb2pea2htp7pthln.apps.googleusercontent.com',
+          clientSecret: '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',
+        );
 
-      // Mobile / web path using google_sign_in
-      final provider = GoogleAuthProvider();
-      await FirebaseAuth.instance.signInWithProvider(provider);
+        final result = await oauth.signIn();
+
+        // Create Firebase credential from the Google tokens
+        final credential = GoogleAuthProvider.credential(
+          idToken: result.idToken,
+          accessToken: result.accessToken,
+        );
+
+        await FirebaseAuth.instance.signInWithCredential(credential);
+        // `_onFirebaseAuthChanged` handles setting `_user`
+      } else {
+        // Mobile / web path
+        final provider = GoogleAuthProvider();
+        await FirebaseAuth.instance.signInWithProvider(provider);
+      }
     } on FirebaseAuthException catch (e) {
       _error = _friendlyError(e.code);
     } catch (e) {
       _error = 'Google sign-in failed: $e';
+      debugPrint('[AuthProvider] Google sign-in error: $e');
     }
 
     _isLoading = false;
