@@ -5,10 +5,10 @@ import 'package:path/path.dart' as p;
 /// Transcribes .wav audio files using **OpenAI Whisper** (via faster-whisper)
 /// for top-tier offline speech recognition accuracy.
 ///
-/// Uses the `large-v3` model (~3 GB, auto-downloaded on first run).
+/// Uses the `medium` model (~1.5 GB, auto-downloaded on first run).
 /// CTranslate2 backend with int8 quantization for fast CPU inference.
 ///
-/// Non-English audio is automatically detected and rejected.
+/// Non-English audio is automatically detected and rejected in a single pass.
 ///
 /// Requirements (installed once):
 ///   pip install faster-whisper
@@ -19,7 +19,7 @@ class SpeechToTextService {
   static String? _pythonExe;
 
   /// Default Whisper model size. Options: tiny, base, small, medium, large-v3
-  static const String _whisperModel = 'large-v3';
+  static const String _whisperModel = 'medium';
 
   /// Locate the Python executable and transcription script. Cached across calls.
   static Future<void> _ensurePaths() async {
@@ -177,7 +177,7 @@ class SpeechToTextService {
   // Minified version of scripts/whisper_transcribe.py
   static const _embeddedPython = r'''
 import sys,os,struct,wave,argparse,re
-SILENCE_RMS=180
+SILENCE_RMS=200
 HALLU={"thank you","thanks for watching","thanks for listening","please subscribe","like and subscribe","you","the","i","it","a","bye","thank you for watching","see you next time","subtitles by the amara.org community","transcribed by https","translated by","so","okay","ok","yeah","yes","no","hmm","um","uh","ah","oh","music","music playing"}
 FILLER={"the","a","i","it","is","to","that","of","on","and","in","but","he","she","we","you","so","um","uh","hmm","oh","ah","like","just"}
 def rms(raw,sw):
@@ -203,16 +203,10 @@ def is_hallu(t):
             if " ".join(w[i:i+ng])==gram: rc+=1
         if rc>=3: return True
     return False
-def detect_lang(model,wav):
-    try:
-        segs,info=model.transcribe(wav,language=None,beam_size=1,best_of=1,vad_filter=True,vad_parameters=dict(min_silence_duration_ms=500,threshold=0.40))
-        _=next(segs,None)
-        return info.language,info.language_probability
-    except: return "en",0.0
 def main():
     parser=argparse.ArgumentParser()
     parser.add_argument("wav_path")
-    parser.add_argument("--model",default="large-v3")
+    parser.add_argument("--model",default="medium")
     parser.add_argument("--language",default="en")
     parser.add_argument("--model-dir",default=None)
     args=parser.parse_args()
@@ -227,15 +221,16 @@ def main():
     mk={"model_size_or_path":args.model,"device":"cpu","compute_type":"int8"}
     if args.model_dir: mk["download_root"]=args.model_dir
     model=WhisperModel(**mk)
-    dl,dp=detect_lang(model,args.wav_path)
     el=args.language.lower()
-    if dl!=el:
-        print(f"[LANG_REJECT] Detected '{dl}' (conf:{dp:.2f}), expected '{el}'",file=sys.stderr); sys.exit(0)
-    if dp<0.5:
-        print(f"[LANG_REJECT] English conf too low: {dp:.2f}",file=sys.stderr); sys.exit(0)
-    segs,info=model.transcribe(args.wav_path,language=el,beam_size=5,best_of=5,patience=2.0,vad_filter=True,vad_parameters=dict(min_silence_duration_ms=400,speech_pad_ms=350,threshold=0.30,min_speech_duration_ms=250),condition_on_previous_text=False,no_speech_threshold=0.5,log_prob_threshold=-0.8,compression_ratio_threshold=2.2,temperature=[0.0,0.2,0.4,0.6,0.8,1.0],word_timestamps=True,repetition_penalty=1.2,initial_prompt="This is a real-time voice monitoring system recording. The speaker is using natural conversational English. Transcribe exactly what is said, including any profanity or hostile language.")
-    parts=[]
+    segs,info=model.transcribe(args.wav_path,language=None,beam_size=5,best_of=5,patience=1.5,vad_filter=True,vad_parameters=dict(min_silence_duration_ms=400,speech_pad_ms=350,threshold=0.30,min_speech_duration_ms=250),condition_on_previous_text=False,no_speech_threshold=0.5,log_prob_threshold=-0.8,compression_ratio_threshold=2.2,temperature=[0.0,0.2,0.4,0.6,0.8,1.0],word_timestamps=True,initial_prompt="This is a real-time voice monitoring system recording. The speaker is using natural conversational English. Transcribe exactly what is said, including any profanity or hostile language.")
+    parts=[]; lc=False
     for seg in segs:
+        if not lc:
+            lc=True
+            if info.language!=el:
+                print(f"[LANG_REJECT] Detected '{info.language}' (conf:{info.language_probability:.2f})",file=sys.stderr); sys.exit(0)
+            if info.language_probability<0.5:
+                print(f"[LANG_REJECT] conf too low: {info.language_probability:.2f}",file=sys.stderr); sys.exit(0)
         t=seg.text.strip()
         if not t or seg.no_speech_prob>0.45: continue
         if seg.words:

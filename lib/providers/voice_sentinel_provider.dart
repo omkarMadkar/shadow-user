@@ -17,10 +17,13 @@ import '../services/text_analysis_service.dart';
 /// waveform data, and persists voice sessions/alerts to SQLite via Drift.
 ///
 /// Records **real audio in 30-second chunks** via the `record` package,
-/// transcribes each chunk using the **Vosk** offline speech recognition
-/// engine, analyses the text for profanity / hostility / threats, and
-/// feeds the real transcription into the live translation display and
+/// transcribes each chunk using **OpenAI Whisper** (faster-whisper) offline
+/// speech recognition, analyses the text for profanity / hostility / threats,
+/// and feeds the real transcription into the live translation display and
 /// summary cards.
+///
+/// Uses a sequential transcription queue to prevent parallel Python processes
+/// from competing for memory.
 class VoiceSentinelProvider extends ChangeNotifier {
   final Random _rng = Random();
   final VoiceDatabase _db = VoiceDatabase();
@@ -75,6 +78,12 @@ class VoiceSentinelProvider extends ChangeNotifier {
   int _chunkSecondsElapsed = 0;
   String? _currentChunkPath;
   bool _isTranscribingChunk = false;
+
+  /// Queue of (wavPath, chunkNum) pairs waiting to be transcribed.
+  /// Only ONE transcription runs at a time to avoid parallel Python
+  /// processes fighting for memory (Whisper model is ~1.5 GB).
+  final List<(String, int)> _transcriptionQueue = [];
+  bool _isProcessingQueue = false;
 
   int get chunkSecondsElapsed => _chunkSecondsElapsed;
   bool _isRotatingChunk = false;
@@ -333,7 +342,7 @@ class VoiceSentinelProvider extends ChangeNotifier {
           _currentChunkNumber,
           Duration(seconds: _chunkSecondsElapsed),
         );
-        _transcribeCompletedChunk(finalPath, _currentChunkNumber);
+        _enqueueTranscription(finalPath, _currentChunkNumber);
       }
     } catch (e) {
       debugPrint('[VoiceSentinel] Error stopping recording: $e');
@@ -557,11 +566,11 @@ class VoiceSentinelProvider extends ChangeNotifier {
 
     _isRotatingChunk = false;
 
-    // Create a chunk entry for the completed chunk & transcribe.
+    // Create a chunk entry for the completed chunk & queue for transcription.
     if (actualChunkPath != null && await File(actualChunkPath).exists()) {
       _createChunkEntry(actualChunkPath, completedChunkNumber, chunkDuration);
-      // Transcribe in background (don't await — next chunk is recording)
-      _transcribeCompletedChunk(actualChunkPath, completedChunkNumber);
+      // Queue transcription — only one runs at a time to prevent OOM
+      _enqueueTranscription(actualChunkPath, completedChunkNumber);
     } else {
       debugPrint(
         '[VoiceSentinel] Chunk $completedChunkNumber file not found '
@@ -611,7 +620,36 @@ class VoiceSentinelProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Transcribe a completed audio chunk using Vosk offline speech
+  // ── Transcription Queue ──────────────────────────────────
+
+  /// Add a chunk to the transcription queue and start processing
+  /// if no other transcription is currently running.
+  void _enqueueTranscription(String wavPath, int chunkNum) {
+    _transcriptionQueue.add((wavPath, chunkNum));
+    debugPrint(
+      '[VoiceSentinel] Queued chunk $chunkNum for transcription '
+      '(queue length: ${_transcriptionQueue.length})',
+    );
+    if (!_isProcessingQueue) {
+      _processTranscriptionQueue();
+    }
+  }
+
+  /// Process queued chunks one at a time. Only ONE Python/Whisper
+  /// process runs at any time to prevent memory exhaustion.
+  Future<void> _processTranscriptionQueue() async {
+    if (_isProcessingQueue) return;
+    _isProcessingQueue = true;
+
+    while (_transcriptionQueue.isNotEmpty) {
+      final (wavPath, chunkNum) = _transcriptionQueue.removeAt(0);
+      await _transcribeCompletedChunk(wavPath, chunkNum);
+    }
+
+    _isProcessingQueue = false;
+  }
+
+  /// Transcribe a completed audio chunk using Whisper offline speech
   /// recognition, then analyse the text for flagged content.
   Future<void> _transcribeCompletedChunk(String wavPath, int chunkNum) async {
     _isTranscribingChunk = true;
