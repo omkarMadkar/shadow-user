@@ -177,39 +177,61 @@ class SpeechToTextService {
 
   // ── Embedded Python script (fallback) ────────────────────
   static const _embeddedPython = r'''
-import sys, json, wave, os
+import sys, json, wave, os, struct
+SILENCE_RMS = 250
+HALLU = {"the","the the","a","i","it","but","and","in","is","to","that","of","on"}
+def rms(raw, sw):
+    if sw!=2 or len(raw)<2: return 0.0
+    fmt="<{}h".format(len(raw)//2); s=struct.unpack(fmt,raw)
+    return (sum(x*x for x in s)/len(s))**0.5
+def normalize(raw, sw):
+    if sw!=2: return raw
+    fmt="<{}h".format(len(raw)//2); samples=list(struct.unpack(fmt,raw))
+    peak=max(abs(s) for s in samples) if samples else 0
+    if peak==0: return raw
+    factor=min(int(32767*0.70)/peak,10.0)
+    norm=[max(-32768,min(32767,int(s*factor))) for s in samples]
+    return struct.pack(fmt,*norm)
+def filt(rd):
+    words=rd.get("result",[])
+    if not words: return rd.get("text","").strip()
+    return " ".join(w["word"] for w in words if w.get("conf",1.0)>=0.35).strip()
+def is_hallu(t):
+    c=t.strip().lower()
+    if not c or c in HALLU: return True
+    w=c.split()
+    if len(set(w))==1 and len(w)<=6: return True
+    if len(w)<4: return True
+    fc=sum(1 for x in w if x in HALLU)
+    if len(w)>0 and fc/len(w)>0.70: return True
+    return False
 def main():
-    if len(sys.argv) < 3:
-        print("Usage: vosk_transcribe.py <model_path> <wav_path>", file=sys.stderr)
-        sys.exit(1)
+    if len(sys.argv)<3:
+        print("Usage: vosk_transcribe.py <model_path> <wav_path>",file=sys.stderr); sys.exit(1)
     model_path, wav_path = sys.argv[1], sys.argv[2]
     if not os.path.isdir(model_path):
-        print(f"Model not found: {model_path}", file=sys.stderr); sys.exit(1)
+        print(f"Model not found: {model_path}",file=sys.stderr); sys.exit(1)
     if not os.path.isfile(wav_path):
-        print(f"WAV not found: {wav_path}", file=sys.stderr); sys.exit(1)
+        print(f"WAV not found: {wav_path}",file=sys.stderr); sys.exit(1)
     try:
         from vosk import Model, KaldiRecognizer, SetLogLevel
     except ImportError:
-        print("vosk not installed", file=sys.stderr); sys.exit(1)
+        print("vosk not installed",file=sys.stderr); sys.exit(1)
     SetLogLevel(-1)
-    model = Model(model_path)
-    wf = wave.open(wav_path, "rb")
-    rec = KaldiRecognizer(model, wf.getframerate())
-    rec.SetWords(True)
-    results = []
-    while True:
-        data = wf.readframes(4000)
-        if len(data) == 0: break
+    wf=wave.open(wav_path,"rb"); params=wf.getparams(); raw=wf.readframes(wf.getnframes()); wf.close()
+    if rms(raw,params.sampwidth)<SILENCE_RMS: sys.exit(0)
+    audio=normalize(raw,params.sampwidth)
+    model=Model(model_path); rec=KaldiRecognizer(model,params.framerate); rec.SetWords(True)
+    csz=8000*params.sampwidth; off=0; results=[]
+    while off<len(audio):
+        data=audio[off:off+csz]; off+=csz
         if rec.AcceptWaveform(data):
-            r = json.loads(rec.Result())
-            t = r.get("text","").strip()
+            t=filt(json.loads(rec.Result()))
             if t: results.append(t)
-    final = json.loads(rec.FinalResult())
-    t = final.get("text","").strip()
+    t=filt(json.loads(rec.FinalResult()))
     if t: results.append(t)
-    wf.close()
-    full = " ".join(results)
-    if full: print(full)
+    full=" ".join(results)
+    if full and not is_hallu(full): print(full)
 if __name__=="__main__": main()
 ''';
 }
