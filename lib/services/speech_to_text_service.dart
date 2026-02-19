@@ -1,48 +1,39 @@
 import 'dart:io';
 import 'package:flutter/foundation.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 
-/// Transcribes .wav audio files using the **Vosk** offline speech recognition
-/// engine via a small Python helper script.
+/// Transcribes .wav audio files using **OpenAI Whisper** (via faster-whisper)
+/// for top-tier offline speech recognition accuracy.
+///
+/// Uses the `medium` model by default (~1.5 GB, auto-downloaded on first run).
+/// CTranslate2 backend with int8 quantization for fast CPU inference.
 ///
 /// Requirements (installed once):
-///   pip install vosk
-///   Vosk model at: <Documents>/shadow_sentinel/vosk_model/
+///   pip install faster-whisper
 ///
-/// No external API keys, no internet — runs entirely offline.
+/// No external API keys, no internet (after model download) — runs entirely offline.
 class SpeechToTextService {
-  static String? _modelPath;
   static String? _scriptPath;
   static String? _pythonExe;
 
-  /// Locate the Vosk model directory, Python executable, and transcription
-  /// script. Cached across calls.
-  static Future<void> _ensurePaths() async {
-    if (_modelPath != null && _scriptPath != null && _pythonExe != null) return;
+  /// Default Whisper model size. Options: tiny, base, small, medium, large-v3
+  static const String _whisperModel = 'medium';
 
-    // Model lives next to the voice_chunks folder
-    final appDir = await getApplicationDocumentsDirectory();
-    _modelPath = p.join(appDir.path, 'shadow_sentinel', 'vosk_model');
+  /// Locate the Python executable and transcription script. Cached across calls.
+  static Future<void> _ensurePaths() async {
+    if (_scriptPath != null && _pythonExe != null) return;
 
     // Python script ships in the project's scripts/ folder.
-    // At runtime the working directory is the project root, so we can
-    // resolve the script relative to the executable's directory or use
-    // the absolute path baked at build time.  For dev mode (flutter run)
-    // we use the workspace-relative path.
-    //
     // Try several common locations:
     final candidates = <String>[
       // 1. In current working directory (flutter run from project root)
-      p.join(Directory.current.path, 'scripts', 'vosk_transcribe.py'),
+      p.join(Directory.current.path, 'scripts', 'whisper_transcribe.py'),
       // 2. Next to the executable (release / MSIX)
       p.join(
         p.dirname(Platform.resolvedExecutable),
         'scripts',
-        'vosk_transcribe.py',
+        'whisper_transcribe.py',
       ),
-      // 3. Fallback — asset copy beside model
-      p.join(appDir.path, 'shadow_sentinel', 'vosk_transcribe.py'),
     ];
 
     for (final c in candidates) {
@@ -52,14 +43,14 @@ class SpeechToTextService {
       }
     }
 
-    // If none found, write an embedded copy into the documents folder.
-    _scriptPath ??= await _writeEmbeddedScript(appDir.path);
+    // If none found, write an embedded copy into a temp location.
+    _scriptPath ??= await _writeEmbeddedScript();
 
     // Resolve Python
     _pythonExe = await _findPython();
   }
 
-  /// Try to find a working Python 3 executable **with Vosk installed**.
+  /// Try to find a working Python 3 executable **with faster-whisper installed**.
   /// Prefers the project .venv first, then falls back to system Python.
   static Future<String> _findPython() async {
     // 1. Check the project .venv (works in dev mode via flutter run)
@@ -76,11 +67,11 @@ class SpeechToTextService {
 
     for (final venv in venvCandidates) {
       if (File(venv).existsSync()) {
-        // Verify Vosk is importable
+        // Verify faster-whisper is importable
         try {
           final r = await Process.run(venv, [
             '-c',
-            'import vosk',
+            'import faster_whisper',
           ], runInShell: true);
           if (r.exitCode == 0) {
             debugPrint('[SpeechToText] Using venv Python: $venv');
@@ -90,35 +81,38 @@ class SpeechToTextService {
       }
     }
 
-    // 2. Fallback: system Python (user may have installed vosk globally)
+    // 2. Fallback: system Python
     for (final exe in ['python', 'python3', 'py -3']) {
       try {
         final r = await Process.run(exe.split(' ').first, [
           ...exe.split(' ').skip(1),
           '-c',
-          'import vosk',
+          'import faster_whisper',
         ], runInShell: true);
         if (r.exitCode == 0) return exe;
       } catch (_) {}
     }
 
-    debugPrint('[SpeechToText] WARNING: could not find Python with Vosk');
+    debugPrint(
+      '[SpeechToText] WARNING: could not find Python with faster-whisper',
+    );
     return 'python'; // fallback
   }
 
-  /// Write the Vosk transcription script into the documents directory
+  /// Write the Whisper transcription script into a temp directory
   /// as a fallback if the scripts/ folder is not found at runtime.
-  static Future<String> _writeEmbeddedScript(String appDirPath) async {
-    final dest = p.join(appDirPath, 'shadow_sentinel', 'vosk_transcribe.py');
+  static Future<String> _writeEmbeddedScript() async {
+    final tempDir = Directory.systemTemp;
+    final dest = p.join(tempDir.path, 'shadow_sentinel_whisper_transcribe.py');
     final file = File(dest);
     if (!file.existsSync()) {
       await file.writeAsString(_embeddedPython);
-      debugPrint('[SpeechToText] Wrote embedded Vosk script → $dest');
+      debugPrint('[SpeechToText] Wrote embedded Whisper script → $dest');
     }
     return dest;
   }
 
-  /// Transcribe a PCM `.wav` file at [wavPath] into text using Vosk.
+  /// Transcribe a PCM `.wav` file at [wavPath] into text using Whisper.
   ///
   /// Returns the transcribed text, or an empty string if nothing was
   /// recognised or an error occurred.
@@ -138,19 +132,19 @@ class SpeechToTextService {
 
       await _ensurePaths();
 
-      // Verify model directory exists
-      if (!Directory(_modelPath!).existsSync()) {
-        debugPrint('[SpeechToText] Vosk model not found at: $_modelPath');
-        return '';
-      }
-
-      debugPrint('[SpeechToText] Transcribing: $wavPath ($fileSize bytes)');
+      debugPrint(
+        '[SpeechToText] Transcribing with Whisper ($_whisperModel): '
+        '$wavPath ($fileSize bytes)',
+      );
 
       final args = <String>[
         ..._pythonExe!.split(' ').skip(1),
         _scriptPath!,
-        _modelPath!,
         wavPath,
+        '--model',
+        _whisperModel,
+        '--language',
+        'en',
       ];
       final exe = _pythonExe!.split(' ').first;
 
@@ -159,14 +153,16 @@ class SpeechToTextService {
       if (result.exitCode == 0) {
         final text = (result.stdout as String).trim();
         if (text.isNotEmpty) {
-          debugPrint('[SpeechToText] Result: $text');
+          debugPrint('[SpeechToText] Whisper result: $text');
         } else {
           debugPrint('[SpeechToText] No speech recognised in audio');
         }
         return text;
       } else {
         final err = (result.stderr as String).trim();
-        debugPrint('[SpeechToText] Vosk error (exit ${result.exitCode}): $err');
+        debugPrint(
+          '[SpeechToText] Whisper error (exit ${result.exitCode}): $err',
+        );
         return '';
       }
     } catch (e) {
@@ -176,61 +172,59 @@ class SpeechToTextService {
   }
 
   // ── Embedded Python script (fallback) ────────────────────
+  // Minified version of scripts/whisper_transcribe.py
   static const _embeddedPython = r'''
-import sys, json, wave, os, struct
-SILENCE_RMS = 250
-HALLU = {"the","the the","a","i","it","but","and","in","is","to","that","of","on"}
-def rms(raw, sw):
+import sys, os, struct, wave, argparse
+SILENCE_RMS=200
+HALLU_PHRASES={"thank you","thanks for watching","thanks for listening","please subscribe","like and subscribe","you","the","i","it","a","bye","thank you for watching","see you next time","subtitles by the amara.org community"}
+FILLER={"the","a","i","it","is","to","that","of","on","and","in","but","he","she","we","you","so"}
+def rms(raw,sw):
     if sw!=2 or len(raw)<2: return 0.0
-    fmt="<{}h".format(len(raw)//2); s=struct.unpack(fmt,raw)
+    n=len(raw)//2; fmt="<{}h".format(n); s=struct.unpack(fmt,raw)
     return (sum(x*x for x in s)/len(s))**0.5
-def normalize(raw, sw):
-    if sw!=2: return raw
-    fmt="<{}h".format(len(raw)//2); samples=list(struct.unpack(fmt,raw))
-    peak=max(abs(s) for s in samples) if samples else 0
-    if peak==0: return raw
-    factor=min(int(32767*0.70)/peak,10.0)
-    norm=[max(-32768,min(32767,int(s*factor))) for s in samples]
-    return struct.pack(fmt,*norm)
-def filt(rd):
-    words=rd.get("result",[])
-    if not words: return rd.get("text","").strip()
-    return " ".join(w["word"] for w in words if w.get("conf",1.0)>=0.35).strip()
 def is_hallu(t):
     c=t.strip().lower()
-    if not c or c in HALLU: return True
+    if not c or c in HALLU_PHRASES: return True
+    for p in HALLU_PHRASES:
+        if c.startswith(p) and len(c)<len(p)+15: return True
     w=c.split()
+    if len(w)<3: return True
     if len(set(w))==1 and len(w)<=6: return True
-    if len(w)<4: return True
-    fc=sum(1 for x in w if x in HALLU)
+    fc=sum(1 for x in w if x in FILLER)
     if len(w)>0 and fc/len(w)>0.70: return True
+    if len(w)>=6:
+        h=len(w)//2
+        if " ".join(w[:h])==" ".join(w[h:h*2]): return True
     return False
 def main():
-    if len(sys.argv)<3:
-        print("Usage: vosk_transcribe.py <model_path> <wav_path>",file=sys.stderr); sys.exit(1)
-    model_path, wav_path = sys.argv[1], sys.argv[2]
-    if not os.path.isdir(model_path):
-        print(f"Model not found: {model_path}",file=sys.stderr); sys.exit(1)
-    if not os.path.isfile(wav_path):
-        print(f"WAV not found: {wav_path}",file=sys.stderr); sys.exit(1)
-    try:
-        from vosk import Model, KaldiRecognizer, SetLogLevel
-    except ImportError:
-        print("vosk not installed",file=sys.stderr); sys.exit(1)
-    SetLogLevel(-1)
-    wf=wave.open(wav_path,"rb"); params=wf.getparams(); raw=wf.readframes(wf.getnframes()); wf.close()
+    parser=argparse.ArgumentParser()
+    parser.add_argument("wav_path")
+    parser.add_argument("--model",default="medium")
+    parser.add_argument("--language",default="en")
+    parser.add_argument("--model-dir",default=None)
+    args=parser.parse_args()
+    if not os.path.isfile(args.wav_path):
+        print(f"WAV not found: {args.wav_path}",file=sys.stderr); sys.exit(1)
+    wf=wave.open(args.wav_path,"rb"); params=wf.getparams(); raw=wf.readframes(wf.getnframes()); wf.close()
     if rms(raw,params.sampwidth)<SILENCE_RMS: sys.exit(0)
-    audio=normalize(raw,params.sampwidth)
-    model=Model(model_path); rec=KaldiRecognizer(model,params.framerate); rec.SetWords(True)
-    csz=8000*params.sampwidth; off=0; results=[]
-    while off<len(audio):
-        data=audio[off:off+csz]; off+=csz
-        if rec.AcceptWaveform(data):
-            t=filt(json.loads(rec.Result()))
-            if t: results.append(t)
-    t=filt(json.loads(rec.FinalResult()))
-    if t: results.append(t)
-    full=" ".join(results)
+    try:
+        from faster_whisper import WhisperModel
+    except ImportError:
+        print("faster-whisper not installed",file=sys.stderr); sys.exit(1)
+    mk={"model_size_or_path":args.model,"device":"cpu","compute_type":"int8"}
+    if args.model_dir: mk["download_root"]=args.model_dir
+    model=WhisperModel(**mk)
+    segs,info=model.transcribe(args.wav_path,language=args.language,beam_size=5,best_of=5,patience=1.5,vad_filter=True,vad_parameters=dict(min_silence_duration_ms=500,speech_pad_ms=300,threshold=0.35),condition_on_previous_text=False,no_speech_threshold=0.6,log_prob_threshold=-1.0,compression_ratio_threshold=2.4,temperature=[0.0,0.2,0.4,0.6,0.8,1.0],word_timestamps=True)
+    parts=[]
+    for seg in segs:
+        t=seg.text.strip()
+        if not t or seg.no_speech_prob>0.5: continue
+        if seg.words:
+            avg=sum(w.probability for w in seg.words)/len(seg.words)
+            if avg<0.40: continue
+            t=" ".join(w.word.strip() for w in seg.words if w.probability>=0.35).strip()
+        if t: parts.append(t)
+    full=" ".join(parts).strip()
     if full and not is_hallu(full): print(full)
 if __name__=="__main__": main()
 ''';
