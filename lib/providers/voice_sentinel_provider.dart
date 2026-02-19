@@ -11,14 +11,16 @@ import '../models/models.dart';
 import '../database/voice_database.dart';
 import '../services/mic_monitor_service.dart';
 import '../services/speech_to_text_service.dart';
+import '../services/text_analysis_service.dart';
 
 /// Voice Sentinel provider — manages mic monitoring, language analysis,
 /// waveform data, and persists voice sessions/alerts to SQLite via Drift.
 ///
 /// Records **real audio in 30-second chunks** via the `record` package,
-/// transcribes each chunk using the Windows built-in Speech Recognition
-/// engine (System.Speech.Recognition), and feeds the real transcription
-/// into the live translation display and summary cards.
+/// transcribes each chunk using the **Vosk** offline speech recognition
+/// engine, analyses the text for profanity / hostility / threats, and
+/// feeds the real transcription into the live translation display and
+/// summary cards.
 class VoiceSentinelProvider extends ChangeNotifier {
   final Random _rng = Random();
   final VoiceDatabase _db = VoiceDatabase();
@@ -138,73 +140,7 @@ class VoiceSentinelProvider extends ChangeNotifier {
 
   // ── Timers ───────────────────────────────────────────────
   Timer? _waveformTimer;
-  Timer? _alertTimer;
   Timer? _durationTimer;
-
-  // ── Harsh Language Detection Templates (for alert simulation) ──
-
-  static const List<Map<String, dynamic>> _harshPhraseTemplates = [
-    {
-      'type': 'profanity',
-      'phrase': 'explicit language detected',
-      'context': 'Audio chunk contained strong profanity in spoken segment',
-      'severity': 'moderate',
-    },
-    {
-      'type': 'hostility',
-      'phrase': 'aggressive tone pattern',
-      'context': 'Voice analysis detected elevated aggression indicators',
-      'severity': 'severe',
-    },
-    {
-      'type': 'threat',
-      'phrase': 'threatening language detected',
-      'context': 'NLP flagged potential threatening statements in transcript',
-      'severity': 'severe',
-    },
-    {
-      'type': 'harassment',
-      'phrase': 'harassing speech pattern',
-      'context': 'Repeated targeting language detected across audio segments',
-      'severity': 'moderate',
-    },
-    {
-      'type': 'toxic',
-      'phrase': 'toxic language indicators',
-      'context': 'Sentiment analysis returned high toxicity score',
-      'severity': 'mild',
-    },
-    {
-      'type': 'profanity',
-      'phrase': 'mild profanity flagged',
-      'context': 'Low-severity profanity detected in casual speech',
-      'severity': 'mild',
-    },
-    {
-      'type': 'hostility',
-      'phrase': 'hostile vocal pattern',
-      'context': 'Voice cadence and pitch indicate hostile interaction',
-      'severity': 'moderate',
-    },
-    {
-      'type': 'threat',
-      'phrase': 'implicit threat detected',
-      'context': 'Contextual analysis flagged implicit threatening language',
-      'severity': 'moderate',
-    },
-    {
-      'type': 'harassment',
-      'phrase': 'discriminatory remarks',
-      'context': 'Content filter flagged discriminatory speech patterns',
-      'severity': 'severe',
-    },
-    {
-      'type': 'toxic',
-      'phrase': 'negative sentiment spike',
-      'context': 'Sustained negative tone exceeding threshold for 15s',
-      'severity': 'mild',
-    },
-  ];
 
   // ────────────────────────────────────────────────────────
   // Initialization
@@ -254,13 +190,16 @@ class VoiceSentinelProvider extends ChangeNotifier {
   }
 
   /// Ensure the chunks directory exists.
+  /// Uses AppData/Local to avoid OneDrive sync interference with audio files.
   Future<void> _initChunksDir() async {
-    final appDir = await getApplicationDocumentsDirectory();
-    _chunksDir = p.join(appDir.path, 'shadow_sentinel', 'voice_chunks');
+    // Prefer a local (non-synced) directory
+    final supportDir = await getApplicationSupportDirectory();
+    _chunksDir = p.join(supportDir.path, 'voice_chunks');
     final dir = Directory(_chunksDir!);
     if (!await dir.exists()) {
       await dir.create(recursive: true);
     }
+    debugPrint('[VoiceSentinel] Chunks directory: $_chunksDir');
   }
 
   Future<void> _loadPersistedData() async {
@@ -359,8 +298,16 @@ class VoiceSentinelProvider extends ChangeNotifier {
       // Verify the recorder is actually recording
       final isRecording = await _recorder.isRecording();
       debugPrint('[VoiceSentinel] Recorder active after start: $isRecording');
-    } catch (e) {
+
+      // Verify the file handle was created
+      if (File(_currentChunkPath!).existsSync()) {
+        debugPrint('[VoiceSentinel] File created on disk ✓');
+      } else {
+        debugPrint('[VoiceSentinel] WARNING: File not created yet on disk');
+      }
+    } catch (e, stack) {
       debugPrint('[VoiceSentinel] Failed to start chunk recording: $e');
+      debugPrint('[VoiceSentinel] Stack: $stack');
     }
   }
 
@@ -475,12 +422,6 @@ class VoiceSentinelProvider extends ChangeNotifier {
       (_) => _updateWaveform(),
     );
 
-    // Simulate alert check every 8 seconds (30% chance of alert)
-    _alertTimer = Timer.periodic(
-      const Duration(seconds: 8),
-      (_) => _simulateAlertCheck(),
-    );
-
     // Session duration counter + chunk rotation driver (every 1 second)
     _durationTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       _sessionDuration += const Duration(seconds: 1);
@@ -507,10 +448,8 @@ class VoiceSentinelProvider extends ChangeNotifier {
 
   void _stopTimers() {
     _waveformTimer?.cancel();
-    _alertTimer?.cancel();
     _durationTimer?.cancel();
     _waveformTimer = null;
-    _alertTimer = null;
     _durationTimer = null;
   }
 
@@ -672,7 +611,8 @@ class VoiceSentinelProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Transcribe a completed audio chunk using Windows Speech Recognition.
+  /// Transcribe a completed audio chunk using Vosk offline speech
+  /// recognition, then analyse the text for flagged content.
   Future<void> _transcribeCompletedChunk(String wavPath, int chunkNum) async {
     _isTranscribingChunk = true;
     _liveTranscriptBuffer = 'Transcribing chunk $chunkNum...';
@@ -684,8 +624,17 @@ class VoiceSentinelProvider extends ChangeNotifier {
 
       if (text.isNotEmpty) {
         debugPrint('[VoiceSentinel] Chunk $chunkNum transcribed: $text');
+
+        // ── Analyse the real transcription ──
+        final analysis = TextAnalysisService.analyse(text);
+
+        // If flagged, generate a real alert
+        if (analysis.isFlagged) {
+          _createRealAlert(analysis, chunkNum);
+        }
+
         // Reveal the transcribed text word-by-word then create summary
-        _revealTranscribedText(text, chunkNum);
+        _revealTranscribedText(text, chunkNum, analysis: analysis);
       } else {
         debugPrint('[VoiceSentinel] Chunk $chunkNum: no speech detected');
         _liveTranscriptBuffer = '(No speech detected in chunk $chunkNum)';
@@ -702,20 +651,26 @@ class VoiceSentinelProvider extends ChangeNotifier {
 
   /// Reveal the transcribed text word-by-word in the live buffer,
   /// then commit the full transcript and generate a real summary.
-  void _revealTranscribedText(String text, int chunkNum) {
+  void _revealTranscribedText(
+    String text,
+    int chunkNum, {
+    TextAnalysisResult? analysis,
+  }) {
     _currentWords = text.split(' ');
     _currentWordIndex = 0;
     _liveTranscriptBuffer = '';
+
+    final result = analysis ?? TextAnalysisResult.clean;
 
     _wordTimer?.cancel();
     _wordTimer = Timer.periodic(const Duration(milliseconds: 80), (_) {
       if (_currentWordIndex >= _currentWords.length) {
         _wordTimer?.cancel();
         _wordTimer = null;
-        // Commit the real transcript
-        _commitTranscript(text);
-        // Create a summary from the real text
-        _generateRealSummary(text, chunkNum);
+        // Commit the real transcript (with analysis results)
+        _commitTranscript(text, analysis: result);
+        // Create a summary from the real text (with analysis results)
+        _generateRealSummary(text, chunkNum, analysis: result);
         return;
       }
       _liveTranscriptBuffer +=
@@ -725,16 +680,19 @@ class VoiceSentinelProvider extends ChangeNotifier {
     });
   }
 
-  /// Store a real transcription segment.
-  void _commitTranscript(String text) {
+  /// Store a real transcription segment with analysis results.
+  void _commitTranscript(
+    String text, {
+    TextAnalysisResult analysis = TextAnalysisResult.clean,
+  }) {
     _transcriptSegments.insert(
       0,
       TranscriptionSegment(
         id: 'ts-${DateTime.now().millisecondsSinceEpoch}-${_rng.nextInt(9999)}',
         text: text,
         timestamp: DateTime.now(),
-        isFlagged: false,
-        flaggedWords: [],
+        isFlagged: analysis.isFlagged,
+        flaggedWords: analysis.flaggedWords,
         sessionId: _currentSessionId ?? 'unknown',
         confidence: 0.90,
       ),
@@ -743,9 +701,18 @@ class VoiceSentinelProvider extends ChangeNotifier {
   }
 
   /// Generate a translation summary from real transcribed text.
-  void _generateRealSummary(String transcribedText, int chunkNum) {
+  void _generateRealSummary(
+    String transcribedText,
+    int chunkNum, {
+    TextAnalysisResult analysis = TextAnalysisResult.clean,
+  }) {
     final now = DateTime.now();
     final keyPoints = _extractKeyPoints(transcribedText);
+
+    // Capitalise first letter of tone for display
+    final displayTone = analysis.isFlagged
+        ? '${analysis.tone[0].toUpperCase()}${analysis.tone.substring(1)}'
+        : 'Transcribed';
 
     _translationSummaries.insert(
       0,
@@ -755,11 +722,11 @@ class VoiceSentinelProvider extends ChangeNotifier {
         endTime: now,
         topic: 'Audio Chunk #$chunkNum',
         summary: transcribedText,
-        tone: 'Transcribed',
+        tone: displayTone,
         keyPoints: keyPoints,
         segmentCount: 1,
-        hasFlaggedContent: false,
-        flaggedWords: [],
+        hasFlaggedContent: analysis.isFlagged,
+        flaggedWords: analysis.flaggedWords,
         avgConfidence: 0.90,
       ),
     );
@@ -781,19 +748,17 @@ class VoiceSentinelProvider extends ChangeNotifier {
     return sentences.take(3).toList();
   }
 
-  // ── Alert Simulation ─────────────────────────────────────
+  // ── Real Alert Generation ───────────────────────────────
 
-  Future<void> _simulateAlertCheck() async {
-    if (!_micActive || _currentSessionId == null) return;
+  /// Create a real alert from text-analysis results.
+  Future<void> _createRealAlert(
+    TextAnalysisResult analysis,
+    int chunkNum,
+  ) async {
+    if (!_micActive || _currentSessionId == null || !analysis.isFlagged) return;
 
-    // 30% chance an alert fires
-    if (_rng.nextDouble() > 0.30) return;
-
-    final template =
-        _harshPhraseTemplates[_rng.nextInt(_harshPhraseTemplates.length)];
-
-    final alertType = _parseAlertType(template['type'] as String);
-    final severity = _parseSeverity(template['severity'] as String);
+    final alertType = _parseAlertType(analysis.alertType);
+    final severity = _severityFromScore(analysis.severity);
 
     final alertId =
         'va-${DateTime.now().millisecondsSinceEpoch}-${_rng.nextInt(9999)}';
@@ -807,9 +772,9 @@ class VoiceSentinelProvider extends ChangeNotifier {
       chunkId: chunkId,
       alertType: alertType,
       severity: severity,
-      flaggedPhrase: template['phrase'] as String,
-      context: template['context'] as String,
-      confidenceScore: 70 + _rng.nextDouble() * 30,
+      flaggedPhrase: analysis.flaggedWords.take(5).join(', '),
+      context: analysis.alertMessage,
+      confidenceScore: analysis.severity.toDouble().clamp(50.0, 100.0),
       timestamp: DateTime.now(),
     );
 
@@ -817,6 +782,22 @@ class VoiceSentinelProvider extends ChangeNotifier {
     if (_recentAlerts.length > 30) _recentAlerts.removeLast();
     _totalAlertsCount++;
     _alertBreakdown[alertType] = (_alertBreakdown[alertType] ?? 0) + 1;
+
+    // Also update the latest chunk entry with severity + flagged words
+    if (_recentChunks.isNotEmpty) {
+      final latestChunk = _recentChunks.first;
+      _recentChunks[0] = VoiceAudioChunk(
+        id: latestChunk.id,
+        sessionId: latestChunk.sessionId,
+        filePath: latestChunk.filePath,
+        duration: latestChunk.duration,
+        timestamp: latestChunk.timestamp,
+        volumeDb: latestChunk.volumeDb,
+        transcript: latestChunk.transcript,
+        severity: severity,
+        flaggedWords: analysis.flaggedWords,
+      );
+    }
 
     // Persist to database
     await _db.insertAlert(
@@ -826,14 +807,27 @@ class VoiceSentinelProvider extends ChangeNotifier {
         chunkId: chunkId,
         alertType: alertType.name,
         severity: severity.name,
-        flaggedPhrase: template['phrase'] as String,
-        context: template['context'] as String,
+        flaggedPhrase: analysis.flaggedWords.take(5).join(', '),
+        context: analysis.alertMessage,
         confidenceScore: alert.confidenceScore,
         timestamp: alert.timestamp,
       ),
     );
 
+    debugPrint(
+      '[VoiceSentinel] ALERT created — ${alertType.name} / ${severity.name} '
+      'in chunk $chunkNum: ${analysis.flaggedWords}',
+    );
+
     notifyListeners();
+  }
+
+  /// Map a numeric severity score (0-100) to a VoiceSeverity enum.
+  VoiceSeverity _severityFromScore(int score) {
+    if (score >= 80) return VoiceSeverity.severe;
+    if (score >= 50) return VoiceSeverity.moderate;
+    if (score >= 20) return VoiceSeverity.mild;
+    return VoiceSeverity.clean;
   }
 
   // ── Helpers ──────────────────────────────────────────────
@@ -852,21 +846,6 @@ class VoiceSentinelProvider extends ChangeNotifier {
         return LanguageAlertType.toxic;
       default:
         return LanguageAlertType.toxic;
-    }
-  }
-
-  VoiceSeverity _parseSeverity(String sev) {
-    switch (sev) {
-      case 'clean':
-        return VoiceSeverity.clean;
-      case 'mild':
-        return VoiceSeverity.mild;
-      case 'moderate':
-        return VoiceSeverity.moderate;
-      case 'severe':
-        return VoiceSeverity.severe;
-      default:
-        return VoiceSeverity.mild;
     }
   }
 
