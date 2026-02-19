@@ -5,8 +5,10 @@ import 'package:path/path.dart' as p;
 /// Transcribes .wav audio files using **OpenAI Whisper** (via faster-whisper)
 /// for top-tier offline speech recognition accuracy.
 ///
-/// Uses the `medium` model by default (~1.5 GB, auto-downloaded on first run).
+/// Uses the `large-v3` model (~3 GB, auto-downloaded on first run).
 /// CTranslate2 backend with int8 quantization for fast CPU inference.
+///
+/// Non-English audio is automatically detected and rejected.
 ///
 /// Requirements (installed once):
 ///   pip install faster-whisper
@@ -17,7 +19,7 @@ class SpeechToTextService {
   static String? _pythonExe;
 
   /// Default Whisper model size. Options: tiny, base, small, medium, large-v3
-  static const String _whisperModel = 'medium';
+  static const String _whisperModel = 'large-v3';
 
   /// Locate the Python executable and transcription script. Cached across calls.
   static Future<void> _ensurePaths() async {
@@ -174,32 +176,43 @@ class SpeechToTextService {
   // ── Embedded Python script (fallback) ────────────────────
   // Minified version of scripts/whisper_transcribe.py
   static const _embeddedPython = r'''
-import sys, os, struct, wave, argparse
-SILENCE_RMS=200
-HALLU_PHRASES={"thank you","thanks for watching","thanks for listening","please subscribe","like and subscribe","you","the","i","it","a","bye","thank you for watching","see you next time","subtitles by the amara.org community"}
-FILLER={"the","a","i","it","is","to","that","of","on","and","in","but","he","she","we","you","so"}
+import sys,os,struct,wave,argparse,re
+SILENCE_RMS=180
+HALLU={"thank you","thanks for watching","thanks for listening","please subscribe","like and subscribe","you","the","i","it","a","bye","thank you for watching","see you next time","subtitles by the amara.org community","transcribed by https","translated by","so","okay","ok","yeah","yes","no","hmm","um","uh","ah","oh","music","music playing"}
+FILLER={"the","a","i","it","is","to","that","of","on","and","in","but","he","she","we","you","so","um","uh","hmm","oh","ah","like","just"}
 def rms(raw,sw):
     if sw!=2 or len(raw)<2: return 0.0
     n=len(raw)//2; fmt="<{}h".format(n); s=struct.unpack(fmt,raw)
     return (sum(x*x for x in s)/len(s))**0.5
 def is_hallu(t):
-    c=t.strip().lower()
-    if not c or c in HALLU_PHRASES: return True
-    for p in HALLU_PHRASES:
+    c=re.sub(r'[^\w\s\']','',t.strip().lower()).strip()
+    if not c or c in HALLU: return True
+    for p in HALLU:
         if c.startswith(p) and len(c)<len(p)+15: return True
     w=c.split()
     if len(w)<3: return True
-    if len(set(w))==1 and len(w)<=6: return True
+    if len(set(w))==1 and len(w)<=8: return True
     fc=sum(1 for x in w if x in FILLER)
-    if len(w)>0 and fc/len(w)>0.70: return True
+    if len(w)>0 and fc/len(w)>0.65: return True
     if len(w)>=6:
         h=len(w)//2
         if " ".join(w[:h])==" ".join(w[h:h*2]): return True
+    for ng in range(2,min(6,len(w)//2+1)):
+        gram=" ".join(w[:ng]); rc=0
+        for i in range(0,len(w)-ng+1,ng):
+            if " ".join(w[i:i+ng])==gram: rc+=1
+        if rc>=3: return True
     return False
+def detect_lang(model,wav):
+    try:
+        segs,info=model.transcribe(wav,language=None,beam_size=1,best_of=1,vad_filter=True,vad_parameters=dict(min_silence_duration_ms=500,threshold=0.40))
+        _=next(segs,None)
+        return info.language,info.language_probability
+    except: return "en",0.0
 def main():
     parser=argparse.ArgumentParser()
     parser.add_argument("wav_path")
-    parser.add_argument("--model",default="medium")
+    parser.add_argument("--model",default="large-v3")
     parser.add_argument("--language",default="en")
     parser.add_argument("--model-dir",default=None)
     args=parser.parse_args()
@@ -214,17 +227,24 @@ def main():
     mk={"model_size_or_path":args.model,"device":"cpu","compute_type":"int8"}
     if args.model_dir: mk["download_root"]=args.model_dir
     model=WhisperModel(**mk)
-    segs,info=model.transcribe(args.wav_path,language=args.language,beam_size=5,best_of=5,patience=1.5,vad_filter=True,vad_parameters=dict(min_silence_duration_ms=500,speech_pad_ms=300,threshold=0.35),condition_on_previous_text=False,no_speech_threshold=0.6,log_prob_threshold=-1.0,compression_ratio_threshold=2.4,temperature=[0.0,0.2,0.4,0.6,0.8,1.0],word_timestamps=True)
+    dl,dp=detect_lang(model,args.wav_path)
+    el=args.language.lower()
+    if dl!=el:
+        print(f"[LANG_REJECT] Detected '{dl}' (conf:{dp:.2f}), expected '{el}'",file=sys.stderr); sys.exit(0)
+    if dp<0.5:
+        print(f"[LANG_REJECT] English conf too low: {dp:.2f}",file=sys.stderr); sys.exit(0)
+    segs,info=model.transcribe(args.wav_path,language=el,beam_size=5,best_of=5,patience=2.0,vad_filter=True,vad_parameters=dict(min_silence_duration_ms=400,speech_pad_ms=350,threshold=0.30,min_speech_duration_ms=250),condition_on_previous_text=False,no_speech_threshold=0.5,log_prob_threshold=-0.8,compression_ratio_threshold=2.2,temperature=[0.0,0.2,0.4,0.6,0.8,1.0],word_timestamps=True,repetition_penalty=1.2,initial_prompt="This is a real-time voice monitoring system recording. The speaker is using natural conversational English. Transcribe exactly what is said, including any profanity or hostile language.")
     parts=[]
     for seg in segs:
         t=seg.text.strip()
-        if not t or seg.no_speech_prob>0.5: continue
+        if not t or seg.no_speech_prob>0.45: continue
         if seg.words:
             avg=sum(w.probability for w in seg.words)/len(seg.words)
-            if avg<0.40: continue
-            t=" ".join(w.word.strip() for w in seg.words if w.probability>=0.35).strip()
+            if avg<0.45: continue
+            t=" ".join(w.word.strip() for w in seg.words if w.probability>=0.40).strip()
         if t: parts.append(t)
-    full=" ".join(parts).strip()
+    full=re.sub(r'\s+',' '," ".join(parts)).strip()
+    full=re.sub(r'[^\w\s\',\.\-!?]','',full).strip()
     if full and not is_hallu(full): print(full)
 if __name__=="__main__": main()
 ''';
