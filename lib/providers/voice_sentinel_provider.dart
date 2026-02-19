@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:math';
 import 'dart:io';
 import 'package:drift/drift.dart';
 import 'package:flutter/foundation.dart';
@@ -12,6 +11,7 @@ import '../database/voice_database.dart';
 import '../services/mic_monitor_service.dart';
 import '../services/speech_to_text_service.dart';
 import '../services/text_analysis_service.dart';
+import 'sentinel_module_provider.dart';
 
 /// Voice Sentinel provider — manages mic monitoring, language analysis,
 /// waveform data, and persists voice sessions/alerts to SQLite via Drift.
@@ -24,8 +24,7 @@ import '../services/text_analysis_service.dart';
 ///
 /// Uses a sequential transcription queue to prevent parallel Python processes
 /// from competing for memory.
-class VoiceSentinelProvider extends ChangeNotifier {
-  final Random _rng = Random();
+class VoiceSentinelProvider extends SentinelModuleProvider {
   final VoiceDatabase _db = VoiceDatabase();
 
   // ── Real Recording ───────────────────────────────────────
@@ -244,8 +243,7 @@ class VoiceSentinelProvider extends ChangeNotifier {
   Future<void> startRecording() async {
     _micActive = true;
     _sessionStatus = VoiceSessionStatus.recording;
-    _currentSessionId =
-        'vs-${DateTime.now().millisecondsSinceEpoch}-${_rng.nextInt(9999)}';
+    _currentSessionId = generateId('vs');
     _sessionDuration = Duration.zero;
     _currentChunkNumber = 0;
     _chunkSecondsElapsed = 0;
@@ -480,8 +478,10 @@ class VoiceSentinelProvider extends ChangeNotifier {
       }
     } catch (_) {
       // Fallback to simulation
-      final base = 0.2 + _rng.nextDouble() * 0.3;
-      final spike = _rng.nextDouble() > 0.85 ? _rng.nextDouble() * 0.5 : 0.0;
+      final base = 0.2 + moduleRng.nextDouble() * 0.3;
+      final spike = moduleRng.nextDouble() > 0.85
+          ? moduleRng.nextDouble() * 0.5
+          : 0.0;
       amplitude = (base + spike).clamp(0.0, 1.0);
     }
 
@@ -584,8 +584,7 @@ class VoiceSentinelProvider extends ChangeNotifier {
 
   /// Create a VoiceAudioChunk entry in the feed and persist to database.
   void _createChunkEntry(String filePath, int chunkNumber, Duration duration) {
-    final chunkId =
-        'vc-${DateTime.now().millisecondsSinceEpoch}-${_rng.nextInt(9999)}';
+    final chunkId = generateId('vc');
 
     final chunk = VoiceAudioChunk(
       id: chunkId,
@@ -593,7 +592,7 @@ class VoiceSentinelProvider extends ChangeNotifier {
       filePath: filePath,
       duration: duration,
       timestamp: DateTime.now(),
-      volumeDb: -20.0 + _rng.nextDouble() * 15,
+      volumeDb: -20.0 + moduleRng.nextDouble() * 15,
       transcript: 'Transcribing...',
       severity: VoiceSeverity.clean,
       flaggedWords: [],
@@ -746,7 +745,7 @@ class VoiceSentinelProvider extends ChangeNotifier {
     _transcriptSegments.insert(
       0,
       TranscriptionSegment(
-        id: 'ts-${DateTime.now().millisecondsSinceEpoch}-${_rng.nextInt(9999)}',
+        id: generateId('ts'),
         text: text,
         timestamp: DateTime.now(),
         isFlagged: analysis.isFlagged,
@@ -775,7 +774,7 @@ class VoiceSentinelProvider extends ChangeNotifier {
     _translationSummaries.insert(
       0,
       TranslationSummary(
-        id: 'tls-${now.millisecondsSinceEpoch}-${_rng.nextInt(9999)}',
+        id: generateId('tls'),
         startTime: now.subtract(const Duration(seconds: chunkDurationSeconds)),
         endTime: now,
         topic: 'Audio Chunk #$chunkNum',
@@ -816,10 +815,9 @@ class VoiceSentinelProvider extends ChangeNotifier {
     if (!_micActive || _currentSessionId == null || !analysis.isFlagged) return;
 
     final alertType = _parseAlertType(analysis.alertType);
-    final severity = _severityFromScore(analysis.severity);
+    final severity = severityFromScore(analysis.severity);
 
-    final alertId =
-        'va-${DateTime.now().millisecondsSinceEpoch}-${_rng.nextInt(9999)}';
+    final alertId = generateId('va');
     final chunkId = _recentChunks.isNotEmpty
         ? _recentChunks.first.id
         : 'vc-unknown';
@@ -880,14 +878,6 @@ class VoiceSentinelProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Map a numeric severity score (0-100) to a VoiceSeverity enum.
-  VoiceSeverity _severityFromScore(int score) {
-    if (score >= 80) return VoiceSeverity.severe;
-    if (score >= 50) return VoiceSeverity.moderate;
-    if (score >= 20) return VoiceSeverity.mild;
-    return VoiceSeverity.clean;
-  }
-
   // ── Helpers ──────────────────────────────────────────────
 
   LanguageAlertType _parseAlertType(String type) {
@@ -926,12 +916,7 @@ class VoiceSentinelProvider extends ChangeNotifier {
     return total > 0 ? ((total - flagged) / total) * 100 : 100.0;
   }
 
-  String get formattedDuration {
-    final h = _sessionDuration.inHours;
-    final m = _sessionDuration.inMinutes % 60;
-    final s = _sessionDuration.inSeconds % 60;
-    return '${h.toString().padLeft(2, '0')}:${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
-  }
+  String get formattedDuration => formatDuration(_sessionDuration);
 
   // ── Cleanup ──────────────────────────────────────────────
 
@@ -944,6 +929,7 @@ class VoiceSentinelProvider extends ChangeNotifier {
     _recorder.dispose();
     _player.dispose();
     _db.close();
+    SpeechToTextService.shutdown();
     super.dispose();
   }
 }

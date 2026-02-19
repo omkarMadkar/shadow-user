@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
@@ -20,6 +22,16 @@ class SpeechToTextService {
 
   /// Default Whisper model size. Options: tiny, base, small, medium, large-v3
   static const String _whisperModel = 'medium';
+
+  // ── Persistent Server State ─────────────────────────────
+  // Keeps the Whisper model loaded in memory between transcription
+  // requests, eliminating 3-8s of model-load overhead per chunk.
+  static Process? _serverProcess;
+  static StreamSubscription<String>? _stdoutSub;
+  static StreamSubscription<String>? _stderrSub;
+  static Completer<String>? _pendingResult;
+  static bool _serverReady = false;
+  static bool _serverStarting = false;
 
   /// Locate the Python executable and transcription script. Cached across calls.
   static Future<void> _ensurePaths() async {
@@ -114,7 +126,149 @@ class SpeechToTextService {
     return dest;
   }
 
+  // ── Persistent Server Management ────────────────────────
+
+  /// Locate the persistent server script (whisper_server.py).
+  static String? _findServerScript() {
+    final candidates = <String>[
+      p.join(Directory.current.path, 'scripts', 'whisper_server.py'),
+      p.join(
+        p.dirname(Platform.resolvedExecutable),
+        'scripts',
+        'whisper_server.py',
+      ),
+    ];
+    for (final c in candidates) {
+      if (File(c).existsSync()) return c;
+    }
+    return null;
+  }
+
+  /// Start the persistent Whisper server subprocess.
+  ///
+  /// The server loads the model once and keeps it in memory,
+  /// accepting transcription requests via stdin/stdout protocol.
+  /// Returns `true` if the server is ready to accept requests.
+  static Future<bool> _startServer() async {
+    if (_serverReady && _serverProcess != null) return true;
+    if (_serverStarting) return false;
+    _serverStarting = true;
+
+    try {
+      await _ensurePaths();
+      final serverScript = _findServerScript();
+      if (serverScript == null) {
+        debugPrint(
+          '[SpeechToText] Server script not found, using one-shot mode',
+        );
+        _serverStarting = false;
+        return false;
+      }
+
+      final exe = _pythonExe!.split(' ').first;
+      final args = <String>[
+        ..._pythonExe!.split(' ').skip(1),
+        serverScript,
+        '--model',
+        _whisperModel,
+        '--language',
+        'en',
+      ];
+
+      debugPrint('[SpeechToText] Starting persistent Whisper server...');
+      _serverProcess = await Process.start(exe, args, runInShell: true);
+
+      final readyCompleter = Completer<bool>();
+
+      // Listen for server responses on stdout
+      _stdoutSub = _serverProcess!.stdout
+          .transform(utf8.decoder)
+          .transform(const LineSplitter())
+          .listen((line) {
+            if (line == 'READY' && !readyCompleter.isCompleted) {
+              debugPrint('[SpeechToText] Persistent server READY');
+              _serverReady = true;
+              readyCompleter.complete(true);
+            } else if (line == 'BYE') {
+              debugPrint('[SpeechToText] Server acknowledged shutdown');
+            } else if (_pendingResult != null && !_pendingResult!.isCompleted) {
+              _pendingResult!.complete(line);
+            }
+          });
+
+      // Forward server stderr for debugging
+      _stderrSub = _serverProcess!.stderr
+          .transform(utf8.decoder)
+          .transform(const LineSplitter())
+          .listen((line) {
+            debugPrint('[SpeechToText/Server] $line');
+          });
+
+      // Handle unexpected process exit
+      _serverProcess!.exitCode.then((code) {
+        debugPrint('[SpeechToText] Server process exited (code $code)');
+        _serverReady = false;
+        _serverProcess = null;
+        _stdoutSub?.cancel();
+        _stderrSub?.cancel();
+        if (!readyCompleter.isCompleted) readyCompleter.complete(false);
+      });
+
+      // Wait for READY signal (model loading can take 10-30s on first run)
+      final ready = await readyCompleter.future.timeout(
+        const Duration(seconds: 120),
+        onTimeout: () {
+          debugPrint('[SpeechToText] Server startup timed out');
+          return false;
+        },
+      );
+
+      _serverStarting = false;
+      return ready;
+    } catch (e) {
+      debugPrint('[SpeechToText] Failed to start persistent server: $e');
+      _serverStarting = false;
+      return false;
+    }
+  }
+
+  /// Transcribe via the persistent server subprocess.
+  /// Sends the wav path on stdin and reads the result from stdout.
+  static Future<String> _transcribeViaServer(String wavPath) async {
+    if (!_serverReady || _serverProcess == null) {
+      throw StateError('Server not running');
+    }
+
+    _pendingResult = Completer<String>();
+    _serverProcess!.stdin.writeln('TRANSCRIBE:$wavPath');
+    await _serverProcess!.stdin.flush();
+
+    final response = await _pendingResult!.future.timeout(
+      const Duration(seconds: 120),
+      onTimeout: () => 'ERROR:Transcription timed out',
+    );
+
+    if (response.startsWith('RESULT:')) {
+      final text = response.substring(7);
+      debugPrint('[SpeechToText] Server result: $text');
+      return text;
+    } else if (response.startsWith('EMPTY:')) {
+      debugPrint('[SpeechToText] Server: no speech detected');
+      return '';
+    } else if (response.startsWith('ERROR:')) {
+      debugPrint('[SpeechToText] Server error: ${response.substring(6)}');
+      return '';
+    }
+    return '';
+  }
+
+  // ── Public API ──────────────────────────────────────────
+
   /// Transcribe a PCM `.wav` file at [wavPath] into text using Whisper.
+  ///
+  /// Tries the **persistent server** first (model stays loaded in memory,
+  /// ~4-8s per chunk). Falls back to **one-shot mode** (spawns a new
+  /// process per chunk, ~6-16s) if the server is unavailable.
   ///
   /// Returns the transcribed text, or an empty string if nothing was
   /// recognised or an error occurred.
@@ -132,44 +286,98 @@ class SpeechToTextService {
         return '';
       }
 
-      await _ensurePaths();
-
       debugPrint(
         '[SpeechToText] Transcribing with Whisper ($_whisperModel): '
         '$wavPath ($fileSize bytes)',
       );
 
-      final args = <String>[
-        ..._pythonExe!.split(' ').skip(1),
-        _scriptPath!,
-        wavPath,
-        '--model',
-        _whisperModel,
-        '--language',
-        'en',
-      ];
-      final exe = _pythonExe!.split(' ').first;
-
-      final result = await Process.run(exe, args, runInShell: true);
-
-      if (result.exitCode == 0) {
-        final text = (result.stdout as String).trim();
-        if (text.isNotEmpty) {
-          debugPrint('[SpeechToText] Whisper result: $text');
-        } else {
-          debugPrint('[SpeechToText] No speech recognised in audio');
+      // ── Try persistent server first ──
+      try {
+        if (!_serverReady) {
+          await _startServer();
         }
-        return text;
-      } else {
-        final err = (result.stderr as String).trim();
-        debugPrint(
-          '[SpeechToText] Whisper error (exit ${result.exitCode}): $err',
-        );
-        return '';
+        if (_serverReady) {
+          return await _transcribeViaServer(wavPath);
+        }
+      } catch (e) {
+        debugPrint('[SpeechToText] Persistent server failed: $e');
+        _serverReady = false;
       }
+
+      // ── Fallback: one-shot mode ──
+      debugPrint('[SpeechToText] Falling back to one-shot mode');
+      return await _transcribeOneShot(wavPath);
     } catch (e) {
       debugPrint('[SpeechToText] Exception: $e');
       return '';
+    }
+  }
+
+  /// One-shot transcription: spawns a new Python process per chunk.
+  /// Used as fallback when the persistent server is unavailable.
+  static Future<String> _transcribeOneShot(String wavPath) async {
+    await _ensurePaths();
+
+    final args = <String>[
+      ..._pythonExe!.split(' ').skip(1),
+      _scriptPath!,
+      wavPath,
+      '--model',
+      _whisperModel,
+      '--language',
+      'en',
+    ];
+    final exe = _pythonExe!.split(' ').first;
+
+    final result = await Process.run(exe, args, runInShell: true);
+
+    if (result.exitCode == 0) {
+      final text = (result.stdout as String).trim();
+      if (text.isNotEmpty) {
+        debugPrint('[SpeechToText] Whisper result: $text');
+      } else {
+        debugPrint('[SpeechToText] No speech recognised in audio');
+      }
+      return text;
+    } else {
+      final err = (result.stderr as String).trim();
+      debugPrint(
+        '[SpeechToText] Whisper error (exit ${result.exitCode}): $err',
+      );
+      return '';
+    }
+  }
+
+  /// Gracefully shut down the persistent server process.
+  ///
+  /// Should be called when the app is closing or the voice module
+  /// is being disposed to free the ~1.5 GB of model memory.
+  static Future<void> shutdown() async {
+    if (_serverProcess != null) {
+      debugPrint('[SpeechToText] Shutting down persistent server...');
+      try {
+        _serverProcess!.stdin.writeln('QUIT');
+        await _serverProcess!.stdin.flush();
+        // Give the server 5 seconds to exit gracefully
+        await _serverProcess!.exitCode.timeout(
+          const Duration(seconds: 5),
+          onTimeout: () {
+            debugPrint('[SpeechToText] Server did not exit, killing process');
+            _serverProcess?.kill();
+            return -1;
+          },
+        );
+      } catch (_) {
+        _serverProcess?.kill();
+      }
+      _serverProcess = null;
+      _serverReady = false;
+      _serverStarting = false;
+      await _stdoutSub?.cancel();
+      await _stderrSub?.cancel();
+      _stdoutSub = null;
+      _stderrSub = null;
+      debugPrint('[SpeechToText] Server shutdown complete');
     }
   }
 
@@ -222,7 +430,7 @@ def main():
     if args.model_dir: mk["download_root"]=args.model_dir
     model=WhisperModel(**mk)
     el=args.language.lower()
-    segs,info=model.transcribe(args.wav_path,language=None,beam_size=5,best_of=5,patience=1.5,vad_filter=True,vad_parameters=dict(min_silence_duration_ms=400,speech_pad_ms=350,threshold=0.30,min_speech_duration_ms=250),condition_on_previous_text=False,no_speech_threshold=0.5,log_prob_threshold=-0.8,compression_ratio_threshold=2.2,temperature=[0.0,0.2,0.4,0.6,0.8,1.0],word_timestamps=True,initial_prompt="This is a real-time voice monitoring system recording. The speaker is using natural conversational English. Transcribe exactly what is said, including any profanity or hostile language.")
+    segs,info=model.transcribe(args.wav_path,language=None,beam_size=5,best_of=3,patience=1.5,vad_filter=True,vad_parameters=dict(min_silence_duration_ms=400,speech_pad_ms=350,threshold=0.30,min_speech_duration_ms=250),condition_on_previous_text=False,no_speech_threshold=0.5,log_prob_threshold=-0.8,compression_ratio_threshold=2.2,temperature=[0.0,0.2,0.4,0.6,0.8,1.0],word_timestamps=True,initial_prompt="This is a real-time voice monitoring system recording. The speaker is using natural conversational English. Transcribe exactly what is said, including any profanity or hostile language.")
     parts=[]; lc=False
     for seg in segs:
         if not lc:

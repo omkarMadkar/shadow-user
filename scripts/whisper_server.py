@@ -1,25 +1,23 @@
 """
-OpenAI Whisper offline speech-to-text transcription script.
-Called by Shadow Sentinel's SpeechToTextService.
+Persistent Whisper transcription server for Shadow Sentinel.
 
-Uses `faster-whisper` (CTranslate2 backend) for 4× faster inference
-than the official OpenAI Whisper implementation, with identical accuracy.
+Keeps the Whisper model loaded in memory between transcription requests,
+eliminating 3-8s of model-load overhead per chunk.
+
+Protocol (line-based, over stdin/stdout):
+  Server → Client:  READY                     (model loaded, ready for requests)
+  Client → Server:  TRANSCRIBE:<wav_path>      (request transcription)
+  Server → Client:  RESULT:<text>              (transcription succeeded)
+  Server → Client:  EMPTY:                     (no speech / silence / hallucination)
+  Server → Client:  ERROR:<message>            (error occurred)
+  Client → Server:  QUIT                       (shutdown server)
+  Server → Client:  BYE                        (acknowledging shutdown)
 
 Usage:
-    python whisper_transcribe.py <wav_path> [--model medium] [--language en]
+    python whisper_server.py [--model medium] [--language en]
 
-Outputs the recognised text to stdout (one line).
-Prints [LANG_REJECT] to stderr and exits cleanly if non-English is detected.
-
-Features:
-  - OpenAI Whisper medium model (best accuracy/speed trade-off for real-time)
-  - Auto-downloads model on first run (~1.5 GB for medium)
-  - Single-pass language detection + transcription (no double processing)
-  - Silence detection to skip empty chunks
-  - VAD filtering to remove non-speech segments
-  - Hallucination detection (phrases, n-gram loops, filler ratio)
-  - Word-level confidence filtering
-  - Runs entirely offline after model download
+The model is loaded ONCE on startup and reused for all subsequent requests.
+This saves 3-8 seconds of model-loading overhead per transcription.
 """
 
 import sys
@@ -29,7 +27,11 @@ import wave
 import argparse
 import re
 
+
 # ── Audio Preprocessing ────────────────────────────────────
+
+SILENCE_RMS_THRESHOLD = 200
+
 
 def rms_energy(raw_bytes, sample_width):
     """Compute RMS energy of 16-bit PCM audio."""
@@ -42,9 +44,6 @@ def rms_energy(raw_bytes, sample_width):
         return 0.0
     sum_sq = sum(s * s for s in samples)
     return (sum_sq / len(samples)) ** 0.5
-
-
-SILENCE_RMS_THRESHOLD = 200
 
 
 def read_wav_pcm(wav_path):
@@ -123,70 +122,27 @@ def is_hallucination(text):
     return False
 
 
-# ── Main ───────────────────────────────────────────────────
+# ── Single-Chunk Transcription ─────────────────────────────
 
-def main():
-    parser = argparse.ArgumentParser(
-        description="Whisper offline speech-to-text for Shadow Sentinel"
-    )
-    parser.add_argument("wav_path", help="Path to the WAV file to transcribe")
-    parser.add_argument(
-        "--model", default="medium",
-        help="Whisper model size (default: medium)"
-    )
-    parser.add_argument(
-        "--language", default="en",
-        help="Expected language code — non-matching audio is rejected (default: en)"
-    )
-    parser.add_argument(
-        "--model-dir", default=None,
-        help="Directory to cache downloaded models (default: auto)"
-    )
+def transcribe_wav(model, wav_path, expected_lang):
+    """Transcribe a single WAV file using an already-loaded model.
 
-    args = parser.parse_args()
-
-    wav_path = args.wav_path
+    Returns the transcribed text, or an empty string if nothing was
+    recognised, the audio was silent, or a hallucination was detected.
+    """
     if not os.path.isfile(wav_path):
-        print(f"WAV file not found: {wav_path}", file=sys.stderr)
-        sys.exit(1)
+        raise FileNotFoundError(f"WAV file not found: {wav_path}")
 
-    # 1. Quick silence check
+    # Quick silence check
     raw_bytes, params = read_wav_pcm(wav_path)
     energy = rms_energy(raw_bytes, params.sampwidth)
     if energy < SILENCE_RMS_THRESHOLD:
-        sys.exit(0)
+        return ""
 
-    # 2. Import faster-whisper
-    try:
-        from faster_whisper import WhisperModel
-    except ImportError:
-        print("faster-whisper not installed. Run: pip install faster-whisper",
-              file=sys.stderr)
-        sys.exit(1)
-
-    # 3. Load model (cached in ~/.cache/huggingface/)
-    model_kwargs = {
-        "model_size_or_path": args.model,
-        "device": "cpu",
-        "compute_type": "int8",
-    }
-    if args.model_dir:
-        model_kwargs["download_root"] = args.model_dir
-
-    try:
-        model = WhisperModel(**model_kwargs)
-    except Exception as e:
-        print(f"Failed to load Whisper model '{args.model}': {e}", file=sys.stderr)
-        sys.exit(1)
-
-    # 4. Single-pass transcription with auto language detection
-    #    We let Whisper detect the language in the SAME pass as transcription.
-    #    No separate detection pass = no double processing.
-    expected_lang = args.language.lower()
-
+    # Single-pass transcription with auto language detection
     segments, info = model.transcribe(
         wav_path,
-        language=None,  # Auto-detect language in this same pass
+        language=None,
         beam_size=5,
         best_of=3,
         patience=1.5,
@@ -206,17 +162,15 @@ def main():
         initial_prompt=(
             "This is a real-time voice monitoring system recording. "
             "The speaker is using natural conversational English. "
-            "Transcribe exactly what is said, including any profanity or hostile language."
+            "Transcribe exactly what is said, including any profanity "
+            "or hostile language."
         ),
     )
 
-    # 5. Collect results with confidence filtering
-    #    We consume the generator and also check language after first segment.
     all_text_parts = []
     language_checked = False
 
     for segment in segments:
-        # Check language from info after first segment is yielded
         if not language_checked:
             language_checked = True
             detected_lang = info.language
@@ -228,7 +182,7 @@ def main():
                     f"(conf: {lang_prob:.2f}), expected '{expected_lang}'",
                     file=sys.stderr,
                 )
-                sys.exit(0)
+                return ""
 
             if lang_prob < 0.5:
                 print(
@@ -236,7 +190,7 @@ def main():
                     f"{lang_prob:.2f}",
                     file=sys.stderr,
                 )
-                sys.exit(0)
+                return ""
 
         text = segment.text.strip()
         if not text:
@@ -246,7 +200,9 @@ def main():
             continue
 
         if segment.words:
-            avg_conf = sum(w.probability for w in segment.words) / len(segment.words)
+            avg_conf = (
+                sum(w.probability for w in segment.words) / len(segment.words)
+            )
             if avg_conf < 0.45:
                 continue
 
@@ -261,13 +217,106 @@ def main():
 
     full_text = " ".join(all_text_parts).strip()
 
-    # 6. Clean up artifacts
+    # Clean up artifacts
     full_text = re.sub(r'\s+', ' ', full_text)
     full_text = re.sub(r'[^\w\s\',.\-!?]', '', full_text).strip()
 
-    # 7. Final hallucination check
+    # Final hallucination check
     if full_text and not is_hallucination(full_text):
-        print(full_text)
+        return full_text
+
+    return ""
+
+
+# ── Server Main Loop ──────────────────────────────────────
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Persistent Whisper transcription server for Shadow Sentinel"
+    )
+    parser.add_argument(
+        "--model", default="medium",
+        help="Whisper model size (default: medium)",
+    )
+    parser.add_argument(
+        "--language", default="en",
+        help="Expected language code (default: en)",
+    )
+    parser.add_argument(
+        "--model-dir", default=None,
+        help="Directory to cache downloaded models (default: auto)",
+    )
+
+    args = parser.parse_args()
+    expected_lang = args.language.lower()
+
+    # ── Load model ONCE ────────────────────────────────────
+    try:
+        from faster_whisper import WhisperModel
+    except ImportError:
+        print("ERROR:faster-whisper not installed", flush=True)
+        sys.exit(1)
+
+    model_kwargs = {
+        "model_size_or_path": args.model,
+        "device": "cpu",
+        "compute_type": "int8",
+    }
+    if args.model_dir:
+        model_kwargs["download_root"] = args.model_dir
+
+    try:
+        print(
+            f"Loading Whisper model '{args.model}'...",
+            file=sys.stderr,
+        )
+        model = WhisperModel(**model_kwargs)
+        print(
+            f"Model '{args.model}' loaded successfully.",
+            file=sys.stderr,
+        )
+    except Exception as e:
+        print(f"ERROR:Failed to load model: {e}", flush=True)
+        sys.exit(1)
+
+    # ── Signal ready ───────────────────────────────────────
+    print("READY", flush=True)
+
+    # ── Process requests ───────────────────────────────────
+    while True:
+        try:
+            line = sys.stdin.readline()
+            if not line:
+                # stdin closed (parent process died)
+                break
+
+            line = line.strip()
+            if not line:
+                continue
+
+            if line == "QUIT":
+                print("BYE", flush=True)
+                break
+
+            if line.startswith("TRANSCRIBE:"):
+                wav_path = line[len("TRANSCRIBE:"):]
+                try:
+                    text = transcribe_wav(model, wav_path, expected_lang)
+                    if text:
+                        print(f"RESULT:{text}", flush=True)
+                    else:
+                        print("EMPTY:", flush=True)
+                except FileNotFoundError as e:
+                    print(f"ERROR:{e}", flush=True)
+                except Exception as e:
+                    print(f"ERROR:Transcription failed: {e}", flush=True)
+            else:
+                print(f"ERROR:Unknown command: {line}", flush=True)
+
+        except KeyboardInterrupt:
+            break
+        except Exception as e:
+            print(f"ERROR:Server error: {e}", flush=True)
 
 
 if __name__ == "__main__":

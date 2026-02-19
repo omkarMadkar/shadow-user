@@ -99,6 +99,9 @@ class _ChunkEntry extends StatelessWidget {
     final isCurrentlyPlaying =
         provider.isPlaying && provider.playingChunkPath == chunk.filePath;
 
+    // Extract chunk number from file path (e.g. "_chunk_3.wav" → "3")
+    final chunkTitle = _extractChunkTitle(chunk.filePath);
+
     return Container(
       margin: const EdgeInsets.only(bottom: 6),
       child: Row(
@@ -131,6 +134,17 @@ class _ChunkEntry extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                // ── Chunk title ──
+                Text(
+                  chunkTitle,
+                  style: SentinelTheme.mono.copyWith(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    color: SentinelTheme.cyberCyan,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+                const SizedBox(height: 3),
                 Row(
                   children: [
                     // Severity badge
@@ -257,6 +271,16 @@ class _ChunkEntry extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  /// Extract "Audio Chunk #N" from a file path like
+  /// `..._chunk_3.wav` → "Audio Chunk #3".
+  String _extractChunkTitle(String filePath) {
+    final match = RegExp(r'_chunk_(\d+)\.wav').firstMatch(filePath);
+    if (match != null) {
+      return 'Audio Chunk #${match.group(1)}';
+    }
+    return 'Audio Chunk';
   }
 
   Color _severityColor(VoiceSeverity severity) {
