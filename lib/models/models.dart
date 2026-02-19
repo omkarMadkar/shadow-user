@@ -326,3 +326,57 @@ class VoiceWaveformSample {
     this.isFlagged = false,
   });
 }
+
+// ─── Transcription Segment ───────────────────────────────────
+
+/// A segment of transcribed speech with metadata.
+class TranscriptionSegment {
+  final String id;
+  final String text;
+  final DateTime timestamp;
+  final bool isFlagged;
+  final List<String> flaggedWords;
+  final String sessionId;
+  final double confidence;
+
+  const TranscriptionSegment({
+    required this.id,
+    required this.text,
+    required this.timestamp,
+    this.isFlagged = false,
+    this.flaggedWords = const [],
+    required this.sessionId,
+    this.confidence = 0.95,
+  });
+}
+
+// ─── Translation Summary ─────────────────────────────────────
+
+/// A time-windowed summary of translated/transcribed speech.
+class TranslationSummary {
+  final String id;
+  final DateTime startTime;
+  final DateTime endTime;
+  final String topic;
+  final String summary;
+  final String tone;
+  final List<String> keyPoints;
+  final int segmentCount;
+  final bool hasFlaggedContent;
+  final List<String> flaggedWords;
+  final double avgConfidence;
+
+  const TranslationSummary({
+    required this.id,
+    required this.startTime,
+    required this.endTime,
+    required this.topic,
+    required this.summary,
+    required this.tone,
+    required this.keyPoints,
+    required this.segmentCount,
+    this.hasFlaggedContent = false,
+    this.flaggedWords = const [],
+    this.avgConfidence = 0.90,
+  });
+}

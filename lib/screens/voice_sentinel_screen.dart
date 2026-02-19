@@ -6,6 +6,8 @@ import '../widgets/voice_waveform_widget.dart';
 import '../widgets/voice_alert_card.dart';
 import '../widgets/voice_stats_panel.dart';
 import '../widgets/voice_log_widget.dart';
+import '../widgets/live_transcription_widget.dart';
+import '../widgets/mic_usage_warning.dart';
 
 /// Voice Sentinel tab — mic monitoring, language analysis, alert feed.
 class VoiceSentinelScreen extends StatelessWidget {
@@ -19,6 +21,8 @@ class VoiceSentinelScreen extends StatelessWidget {
           padding: const EdgeInsets.all(16),
           child: Column(
             children: [
+              // ── Mic Usage Warning Banner ────────────────
+              const MicUsageWarning(),
               // ── Header Card ──────────────────────────────
               _VoiceHeaderCard(provider: provider),
               const SizedBox(height: 16),
@@ -38,6 +42,8 @@ class VoiceSentinelScreen extends StatelessWidget {
                           child: Column(
                             children: [
                               const VoiceWaveformWidget(),
+                              const SizedBox(height: 16),
+                              const LiveTranscriptionWidget(),
                               const SizedBox(height: 16),
                               _AlertFeed(alerts: provider.recentAlerts),
                             ],
@@ -66,6 +72,8 @@ class VoiceSentinelScreen extends StatelessWidget {
                   return Column(
                     children: [
                       const VoiceWaveformWidget(),
+                      const SizedBox(height: 16),
+                      const LiveTranscriptionWidget(),
                       const SizedBox(height: 16),
                       const VoiceStatsPanel(),
                       const SizedBox(height: 16),
@@ -152,7 +160,7 @@ class _VoiceHeaderCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  'Speech Analysis • Harsh Language Detection • Audio Chunking',
+                  'OS Mic Monitor • Live Transcription • Harsh Language Detection',
                   style: SentinelTheme.sans.copyWith(
                     fontSize: 11,
                     color: SentinelTheme.textSecondary,
@@ -161,6 +169,10 @@ class _VoiceHeaderCard extends StatelessWidget {
               ],
             ),
           ),
+
+          // Auto-protect toggle
+          _AutoProtectToggle(provider: provider),
+          const SizedBox(width: 12),
 
           // Clean ratio display
           Column(
@@ -334,6 +346,51 @@ class _AlertFeed extends StatelessWidget {
           else
             ...alerts.take(10).map((alert) => VoiceAlertCard(alert: alert)),
         ],
+      ),
+    );
+  }
+}
+
+// ─── Auto-Protect Toggle ─────────────────────────────────────
+
+class _AutoProtectToggle extends StatelessWidget {
+  final VoiceSentinelProvider provider;
+
+  const _AutoProtectToggle({required this.provider});
+
+  @override
+  Widget build(BuildContext context) {
+    final active = provider.autoProtectEnabled;
+    final color = active ? SentinelTheme.cyberCyan : SentinelTheme.textMuted;
+
+    return GestureDetector(
+      onTap: () => provider.toggleAutoProtect(),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: color.withValues(alpha: 0.3)),
+        ),
+        child: Column(
+          children: [
+            Icon(
+              active ? Icons.shield : Icons.shield_outlined,
+              color: color,
+              size: 18,
+            ),
+            const SizedBox(height: 2),
+            Text(
+              'AUTO',
+              style: SentinelTheme.mono.copyWith(
+                fontSize: 8,
+                fontWeight: FontWeight.w700,
+                color: color,
+                letterSpacing: 0.5,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
