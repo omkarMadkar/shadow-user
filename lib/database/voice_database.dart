@@ -91,6 +91,11 @@ class VoiceDatabase extends _$VoiceDatabase {
             ..orderBy([(t) => OrderingTerm.desc(t.timestamp)]))
           .get();
 
+  Future<void> updateChunkTranscript(String id, String transcript) =>
+      (update(voiceChunks)..where((t) => t.id.equals(id))).write(
+        VoiceChunksCompanion(transcript: Value(transcript)),
+      );
+
   Future<int> getChunkCount() async {
     final count = voiceChunks.id.count();
     final query = selectOnly(voiceChunks)..addColumns([count]);

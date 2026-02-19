@@ -532,13 +532,10 @@ class VoiceSentinelProvider extends ChangeNotifier {
       );
     }
 
-    // Give the OS a moment to flush the WAV file to disk.
-    await Future.delayed(const Duration(milliseconds: 500));
-
     // Use the path the recorder actually saved to.
     final actualChunkPath = savedPath ?? completedChunkPath;
 
-    // Start recording the next chunk.
+    // Start recording the NEXT chunk immediately — zero gap in recording.
     _currentChunkNumber++;
     _currentChunkPath = p.join(
       _chunksDir!,
@@ -565,6 +562,10 @@ class VoiceSentinelProvider extends ChangeNotifier {
     }
 
     _isRotatingChunk = false;
+
+    // Brief delay for OS to finish flushing the completed WAV to disk
+    // (runs in parallel with the new chunk already recording).
+    await Future.delayed(const Duration(milliseconds: 250));
 
     // Create a chunk entry for the completed chunk & queue for transcription.
     if (actualChunkPath != null && await File(actualChunkPath).exists()) {
@@ -663,6 +664,9 @@ class VoiceSentinelProvider extends ChangeNotifier {
       if (text.isNotEmpty) {
         debugPrint('[VoiceSentinel] Chunk $chunkNum transcribed: $text');
 
+        // ── Update the chunk entry with actual transcript ──
+        _updateChunkTranscript(chunkNum, text);
+
         // ── Analyse the real transcription ──
         final analysis = TextAnalysisService.analyse(text);
 
@@ -687,35 +691,51 @@ class VoiceSentinelProvider extends ChangeNotifier {
     }
   }
 
-  /// Reveal the transcribed text word-by-word in the live buffer,
+  /// Update the chunk entry in _recentChunks with the actual transcript text.
+  void _updateChunkTranscript(int chunkNum, String transcript) {
+    for (int i = 0; i < _recentChunks.length; i++) {
+      final chunk = _recentChunks[i];
+      if (chunk.transcript == 'Transcribing...' &&
+          chunk.filePath.contains('_chunk_$chunkNum.wav')) {
+        _recentChunks[i] = VoiceAudioChunk(
+          id: chunk.id,
+          sessionId: chunk.sessionId,
+          filePath: chunk.filePath,
+          duration: chunk.duration,
+          timestamp: chunk.timestamp,
+          volumeDb: chunk.volumeDb,
+          transcript: transcript,
+          severity: chunk.severity,
+          flaggedWords: chunk.flaggedWords,
+        );
+
+        // Also update the database
+        _db.updateChunkTranscript(chunk.id, transcript);
+        break;
+      }
+    }
+  }
+
+  /// Show the transcribed text instantly in the live buffer,
   /// then commit the full transcript and generate a real summary.
   void _revealTranscribedText(
     String text,
     int chunkNum, {
     TextAnalysisResult? analysis,
   }) {
-    _currentWords = text.split(' ');
-    _currentWordIndex = 0;
-    _liveTranscriptBuffer = '';
+    _wordTimer?.cancel();
+    _wordTimer = null;
 
     final result = analysis ?? TextAnalysisResult.clean;
 
-    _wordTimer?.cancel();
-    _wordTimer = Timer.periodic(const Duration(milliseconds: 80), (_) {
-      if (_currentWordIndex >= _currentWords.length) {
-        _wordTimer?.cancel();
-        _wordTimer = null;
-        // Commit the real transcript (with analysis results)
-        _commitTranscript(text, analysis: result);
-        // Create a summary from the real text (with analysis results)
-        _generateRealSummary(text, chunkNum, analysis: result);
-        return;
-      }
-      _liveTranscriptBuffer +=
-          (_currentWordIndex > 0 ? ' ' : '') + _currentWords[_currentWordIndex];
-      _currentWordIndex++;
-      notifyListeners();
-    });
+    // Show the full transcription immediately — no delay.
+    _liveTranscriptBuffer = text;
+    notifyListeners();
+
+    // Commit the real transcript (with analysis results)
+    _commitTranscript(text, analysis: result);
+    // Create a summary from the real text (with analysis results)
+    _generateRealSummary(text, chunkNum, analysis: result);
   }
 
   /// Store a real transcription segment with analysis results.
