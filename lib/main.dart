@@ -9,6 +9,7 @@ import 'screens/email_threat_screen.dart';
 import 'screens/neural_camera_screen.dart';
 import 'screens/voice_sentinel_screen.dart';
 import 'screens/login_screen.dart';
+import 'screens/screen_capture_test_screen.dart';
 import 'widgets/sentinel_header.dart';
 
 void main() async {
@@ -106,6 +107,7 @@ class _MainShellState extends State<MainShell> {
     EmailThreatScreen(),
     NeuralCameraScreen(),
     VoiceSentinelScreen(),
+    ScreenCaptureTestScreen(),
   ];
 
   @override
@@ -192,6 +194,11 @@ class _MainShellState extends State<MainShell> {
               icon: Icon(Icons.mic),
               activeIcon: _ActiveNavIcon(Icons.mic, const Color(0xFF8B5CF6)),
               label: 'VOICE SENTINEL',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.screenshot),
+              activeIcon: _ActiveNavIcon(Icons.screenshot, SentinelTheme.alertGreen),
+              label: 'CAPTURE TEST',
             ),
           ],
         ),
