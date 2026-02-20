@@ -1,4 +1,11 @@
+import 'dart:io';
+import 'dart:typed_data';
+
+import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
+
 import '../database/voice_database.dart';
 import '../theme/sentinel_theme.dart';
 
@@ -25,6 +32,11 @@ class _AdminUserDetailScreenState extends State<AdminUserDetailScreen>
   bool _loading = true;
   int _selectedTab = 0;
 
+  // Audio playback
+  final AudioPlayer _player = AudioPlayer();
+  String? _playingChunkId;
+  bool _isPlaying = false;
+
   late AnimationController _pulseController;
   late Animation<double> _pulseAnim;
 
@@ -38,13 +50,99 @@ class _AdminUserDetailScreenState extends State<AdminUserDetailScreen>
     _pulseAnim = Tween<double>(begin: 0.3, end: 1.0).animate(
       CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
     );
+    _player.onPlayerComplete.listen((_) {
+      if (mounted) {
+        setState(() {
+          _isPlaying = false;
+          _playingChunkId = null;
+        });
+      }
+    });
     _loadData();
   }
 
   @override
   void dispose() {
+    _player.dispose();
     _pulseController.dispose();
     super.dispose();
+  }
+
+  // ── Audio Playback ─────────────────────────────────────
+
+  Future<void> _playChunkAudio(String chunkId) async {
+    try {
+      // If already playing this chunk, stop
+      if (_isPlaying && _playingChunkId == chunkId) {
+        await _player.stop();
+        setState(() {
+          _isPlaying = false;
+          _playingChunkId = null;
+        });
+        return;
+      }
+
+      // Stop any current playback
+      if (_isPlaying) await _player.stop();
+
+      setState(() {
+        _isPlaying = true;
+        _playingChunkId = chunkId;
+      });
+
+      // First try to find the chunk's file on disk
+      final chunk = _allChunks.cast<VoiceChunk?>().firstWhere(
+        (c) => c!.id == chunkId,
+        orElse: () => null,
+      );
+
+      if (chunk != null && File(chunk.filePath).existsSync()) {
+        await _player.play(DeviceFileSource(chunk.filePath));
+        return;
+      }
+
+      // Fall back to DB BLOB
+      final Uint8List? audioBytes = await _db.getChunkAudioData(chunkId);
+      if (audioBytes != null && audioBytes.isNotEmpty) {
+        final appDir = await getApplicationSupportDirectory();
+        final tempPath = p.join(
+          appDir.path,
+          'admin_playback_${DateTime.now().millisecondsSinceEpoch}.wav',
+        );
+        await File(tempPath).writeAsBytes(audioBytes);
+        await _player.play(DeviceFileSource(tempPath));
+        debugPrint('[AdminDetail] Playing chunk $chunkId from DB');
+      } else {
+        debugPrint('[AdminDetail] No audio data for chunk $chunkId');
+        if (mounted) {
+          setState(() {
+            _isPlaying = false;
+            _playingChunkId = null;
+          });
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'No audio data available for this chunk.',
+                style: SentinelTheme.mono.copyWith(
+                  fontSize: 11,
+                  color: Colors.white,
+                ),
+              ),
+              backgroundColor: SentinelTheme.alertRed.withValues(alpha: 0.9),
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      debugPrint('[AdminDetail] Playback error: $e');
+      if (mounted) {
+        setState(() {
+          _isPlaying = false;
+          _playingChunkId = null;
+        });
+      }
+    }
   }
 
   Future<void> _loadData() async {
@@ -637,6 +735,8 @@ class _AdminUserDetailScreenState extends State<AdminUserDetailScreen>
                   color: SentinelTheme.textMuted,
                 ),
               ),
+              const Spacer(),
+              _buildPlayButton(alert.chunkId),
             ],
           ),
         ],
@@ -751,6 +851,8 @@ class _AdminUserDetailScreenState extends State<AdminUserDetailScreen>
                   ),
                 ),
               ),
+              const SizedBox(height: 8),
+              _buildPlayButton(chunk.id),
               if (chunk.flaggedWords.isNotEmpty) ...[
                 const SizedBox(height: 8),
                 Wrap(
@@ -1052,6 +1154,52 @@ class _AdminUserDetailScreenState extends State<AdminUserDetailScreen>
       default:
         return SentinelTheme.textMuted;
     }
+  }
+
+  Widget _buildPlayButton(String chunkId) {
+    final isThisPlaying = _isPlaying && _playingChunkId == chunkId;
+    return GestureDetector(
+      onTap: () => _playChunkAudio(chunkId),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        decoration: BoxDecoration(
+          color: isThisPlaying
+              ? SentinelTheme.alertRed.withValues(alpha: 0.15)
+              : SentinelTheme.cyberBlue.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(
+            color: isThisPlaying
+                ? SentinelTheme.alertRed.withValues(alpha: 0.4)
+                : SentinelTheme.cyberBlue.withValues(alpha: 0.3),
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              isThisPlaying ? Icons.stop_rounded : Icons.play_arrow_rounded,
+              size: 16,
+              color: isThisPlaying
+                  ? SentinelTheme.alertRed
+                  : SentinelTheme.cyberBlue,
+            ),
+            const SizedBox(width: 4),
+            Text(
+              isThisPlaying ? 'STOP' : 'PLAY',
+              style: SentinelTheme.mono.copyWith(
+                fontSize: 9,
+                fontWeight: FontWeight.w700,
+                color: isThisPlaying
+                    ? SentinelTheme.alertRed
+                    : SentinelTheme.cyberBlue,
+                letterSpacing: 0.5,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   String _formatTime(DateTime dt) {

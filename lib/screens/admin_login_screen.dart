@@ -424,9 +424,7 @@ class _AdminLoginScreenState extends State<AdminLoginScreen>
 
     if (success && mounted) {
       Navigator.of(context).pushReplacement(
-        MaterialPageRoute(
-          builder: (_) => const AdminDashboardScreen(),
-        ),
+        MaterialPageRoute(builder: (_) => const AdminDashboardScreen()),
       );
     }
   }
