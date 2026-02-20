@@ -1,6 +1,9 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 import 'dart:math';
 import 'package:flutter/foundation.dart';
+import 'package:path_provider/path_provider.dart';
 import '../models/models.dart';
 import '../services/face_verification_service.dart';
 
@@ -173,6 +176,19 @@ class SentinelProvider extends ChangeNotifier {
   bool _isVerifying = false;
   bool get isVerifying => _isVerifying;
 
+  /// Consecutive face mismatch counter.
+  int _consecutiveMismatches = 0;
+  int get consecutiveMismatches => _consecutiveMismatches;
+
+  /// Total face alerts triggered this session.
+  int _faceAlertCount = 0;
+  int get faceAlertCount => _faceAlertCount;
+
+  /// Email of the current logged-in user (set from AuthProvider).
+  String _currentUserEmail = 'unknown';
+  String get currentUserEmail => _currentUserEmail;
+  set currentUserEmail(String email) => _currentUserEmail = email;
+
   FaceScanFrame _currentFrame = FaceScanFrame(
     confidence: 0,
     livenessScore: 0,
@@ -293,6 +309,21 @@ class SentinelProvider extends ChangeNotifier {
       _spoofingAttempts++;
     }
 
+    // Track consecutive mismatches
+    if (!result.matched) {
+      _consecutiveMismatches++;
+      if (_consecutiveMismatches >= 2) {
+        _faceAlertCount++;
+        _persistFaceAlert(result);
+        debugPrint(
+          '[NeuralCamera] ALERT: $_consecutiveMismatches consecutive face '
+          'mismatches for $_currentUserEmail',
+        );
+      }
+    } else {
+      _consecutiveMismatches = 0;
+    }
+
     // Update running average
     if (_avgConfidence == 0) {
       _avgConfidence = result.confidence;
@@ -318,6 +349,61 @@ class SentinelProvider extends ChangeNotifier {
     );
 
     notifyListeners();
+  }
+
+  /// Persist a face mismatch alert to a shared JSON file so the admin
+  /// dashboard can read it.
+  Future<void> _persistFaceAlert(FaceVerificationResult result) async {
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      final file = File('${dir.path}/sentinel_face_alerts.json');
+
+      List<dynamic> alerts = [];
+      if (file.existsSync()) {
+        final content = await file.readAsString();
+        if (content.isNotEmpty) {
+          alerts = jsonDecode(content) as List<dynamic>;
+        }
+      }
+
+      alerts.add({
+        'userEmail': _currentUserEmail,
+        'timestamp': DateTime.now().toIso8601String(),
+        'consecutiveMismatches': _consecutiveMismatches,
+        'confidence': result.confidence,
+        'liveness': result.livenessScore,
+        'capturedImagePath': result.capturedImagePath,
+        'detail': result.statusDetail,
+      });
+
+      await file.writeAsString(jsonEncode(alerts));
+    } catch (e) {
+      debugPrint('[NeuralCamera] Failed to persist face alert: $e');
+    }
+  }
+
+  /// Read all persisted face alerts (used by admin dashboard).
+  static Future<List<Map<String, dynamic>>> loadFaceAlerts() async {
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      final file = File('${dir.path}/sentinel_face_alerts.json');
+      if (!file.existsSync()) return [];
+      final content = await file.readAsString();
+      if (content.isEmpty) return [];
+      final list = jsonDecode(content) as List<dynamic>;
+      return list.cast<Map<String, dynamic>>();
+    } catch (e) {
+      debugPrint('[NeuralCamera] Failed to load face alerts: $e');
+      return [];
+    }
+  }
+
+  /// Get face alerts filtered by a specific user email.
+  static Future<List<Map<String, dynamic>>> getFaceAlertsForUser(
+    String email,
+  ) async {
+    final all = await loadFaceAlerts();
+    return all.where((a) => a['userEmail'] == email).toList();
   }
 
   void _addCameraLog({

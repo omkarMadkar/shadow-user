@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
+import '../providers/sentinel_provider.dart';
 import '../database/voice_database.dart';
 import '../theme/sentinel_theme.dart';
 import 'admin_user_detail_screen.dart';
@@ -28,6 +29,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
   int _totalSessions = 0;
   int _totalAlerts = 0;
   int _totalFlagged = 0;
+
+  // Face verification alerts
+  List<Map<String, dynamic>> _faceAlerts = [];
+  Map<String, List<Map<String, dynamic>>> _faceAlertsByUser = {};
 
   late AnimationController _pulseController;
   late Animation<double> _pulseAnim;
@@ -68,6 +73,14 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
         totalFlagged += (stats['flaggedChunks'] as int?) ?? 0;
       }
 
+      // Load face verification alerts
+      final faceAlerts = await SentinelProvider.loadFaceAlerts();
+      final faceByUser = <String, List<Map<String, dynamic>>>{};
+      for (final alert in faceAlerts) {
+        final email = alert['userEmail'] as String? ?? 'unknown';
+        faceByUser.putIfAbsent(email, () => []).add(alert);
+      }
+
       setState(() {
         _users = users;
         _userStats = statsMap;
@@ -75,6 +88,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
         _totalSessions = totalSessions;
         _totalAlerts = totalAlerts;
         _totalFlagged = totalFlagged;
+        _faceAlerts = faceAlerts;
+        _faceAlertsByUser = faceByUser;
         _loading = false;
       });
     } catch (e) {
@@ -252,6 +267,12 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
           _buildGlobalStats(),
           const SizedBox(height: 24),
 
+          // Face alert banner (if any)
+          if (_faceAlerts.isNotEmpty) ...[
+            _buildFaceAlertSection(),
+            const SizedBox(height: 24),
+          ],
+
           // Section header
           _sectionHeader('MONITORED USERS', Icons.people),
           const SizedBox(height: 14),
@@ -300,7 +321,145 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
           icon: Icons.flag,
           color: SentinelTheme.alertAmber,
         ),
+        const SizedBox(width: 12),
+        _GlobalStatChip(
+          label: 'FACE ALERTS',
+          value: '${_faceAlerts.length}',
+          icon: Icons.face_retouching_off,
+          color: _faceAlerts.isNotEmpty
+              ? SentinelTheme.alertRed
+              : SentinelTheme.alertGreen,
+        ),
       ],
+    );
+  }
+
+  // ── Face Alert Section ───────────────────────────────────
+
+  Widget _buildFaceAlertSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _sectionHeader('FACE VERIFICATION ALERTS', Icons.face_retouching_off),
+        const SizedBox(height: 14),
+        ..._faceAlertsByUser.entries.map((entry) {
+          final email = entry.key;
+          final alerts = entry.value;
+          // Sort newest first
+          alerts.sort(
+            (a, b) =>
+                (b['timestamp'] as String).compareTo(a['timestamp'] as String),
+          );
+          return _buildFaceAlertCard(email, alerts);
+        }),
+      ],
+    );
+  }
+
+  Widget _buildFaceAlertCard(String email, List<Map<String, dynamic>> alerts) {
+    final latest = alerts.first;
+    final latestTime = DateTime.tryParse(latest['timestamp'] as String? ?? '');
+    final consecutiveMismatches =
+        (latest['consecutiveMismatches'] as num?)?.toInt() ?? 2;
+    final confidence = (latest['confidence'] as num?)?.toDouble() ?? 0;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: SentinelTheme.alertRed.withValues(alpha: 0.06),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: SentinelTheme.alertRed.withValues(alpha: 0.35),
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Header row
+            Row(
+              children: [
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: SentinelTheme.alertRed.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: SentinelTheme.alertRed.withValues(alpha: 0.3),
+                    ),
+                  ),
+                  child: Icon(
+                    Icons.warning_rounded,
+                    color: SentinelTheme.alertRed,
+                    size: 18,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'IDENTITY MISMATCH — $email',
+                        style: SentinelTheme.mono.copyWith(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: SentinelTheme.alertRed,
+                          letterSpacing: 0.5,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        '$consecutiveMismatches consecutive failed verifications '
+                        '• Confidence: ${confidence.toStringAsFixed(1)}%',
+                        style: SentinelTheme.sans.copyWith(
+                          fontSize: 10,
+                          color: SentinelTheme.textMuted,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                // Alert count badge
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: SentinelTheme.alertRed.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: SentinelTheme.alertRed.withValues(alpha: 0.3),
+                    ),
+                  ),
+                  child: Text(
+                    '${alerts.length} ALERT${alerts.length > 1 ? 'S' : ''}',
+                    style: SentinelTheme.mono.copyWith(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w800,
+                      color: SentinelTheme.alertRed,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            if (latestTime != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                'Latest: ${_formatDate(latestTime)}',
+                style: SentinelTheme.mono.copyWith(
+                  fontSize: 9,
+                  color: SentinelTheme.textMuted,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
     );
   }
 
@@ -312,8 +471,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
     final alerts = (stats['totalAlerts'] as int?) ?? 0;
     final chunks = (stats['totalChunks'] as int?) ?? 0;
     final flagged = (stats['flaggedChunks'] as int?) ?? 0;
+    final userFaceAlerts = _faceAlertsByUser[user.email] ?? [];
+    final hasFaceAlert = userFaceAlerts.isNotEmpty;
 
-    final hasAlerts = alerts > 0;
+    final hasAlerts = alerts > 0 || hasFaceAlert;
     final accentColor = hasAlerts
         ? SentinelTheme.alertRed
         : SentinelTheme.cyberBlue;
@@ -459,6 +620,15 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                           ? SentinelTheme.alertAmber
                           : SentinelTheme.alertGreen,
                     ),
+                    if (hasFaceAlert) ...[
+                      const SizedBox(width: 12),
+                      _UserStatChip(
+                        icon: Icons.face_retouching_off,
+                        label:
+                            '${userFaceAlerts.length} face alert${userFaceAlerts.length > 1 ? 's' : ''}',
+                        color: SentinelTheme.alertRed,
+                      ),
+                    ],
                     const Spacer(),
                     // Last login
                     Text(

@@ -11,7 +11,6 @@ import 'screens/voice_sentinel_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/screen_capture_test_screen.dart';
 import 'screens/admin_dashboard_screen.dart';
-import 'screens/face_enrollment_screen.dart';
 import 'widgets/sentinel_header.dart';
 
 void main() async {
@@ -98,11 +97,15 @@ class _AuthGate extends StatelessWidget {
     final voiceProv = context.read<VoiceSentinelProvider>();
     voiceProv.currentUserEmail = auth.user?.email ?? 'unknown';
 
+    // Tag face verification with the current user's email
+    final sentinelProv = context.read<SentinelProvider>();
+    sentinelProv.currentUserEmail = auth.user?.email ?? 'unknown';
+
     return const _FaceGate();
   }
 }
 
-/// Shows face enrollment once, then proceeds to MainShell.
+/// Silently captures a reference face on login and proceeds to [MainShell].
 class _FaceGate extends StatefulWidget {
   const _FaceGate();
 
@@ -111,50 +114,29 @@ class _FaceGate extends StatefulWidget {
 }
 
 class _FaceGateState extends State<_FaceGate> {
-  bool _enrolled = false;
-  bool _checking = true;
-
   @override
   void initState() {
     super.initState();
-    _checkExistingReference();
+    _initFaceVerification();
   }
 
-  Future<void> _checkExistingReference() async {
+  Future<void> _initFaceVerification() async {
     final provider = context.read<SentinelProvider>();
     final hasRef = await provider.loadReferenceFace();
     if (hasRef) {
-      // Already enrolled — start verification and go to dashboard
+      // Already enrolled — start periodic verification
       provider.startRealVerification(intervalSeconds: 30);
-      setState(() {
-        _enrolled = true;
-        _checking = false;
-      });
     } else {
-      setState(() => _checking = false);
+      // Silently capture reference face in background
+      final path = await provider.captureReferenceFace();
+      if (path != null) {
+        provider.startRealVerification(intervalSeconds: 30);
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_checking) {
-      return Scaffold(
-        backgroundColor: SentinelTheme.bg,
-        body: Center(
-          child: CircularProgressIndicator(
-            strokeWidth: 2,
-            color: SentinelTheme.cyberBlue,
-          ),
-        ),
-      );
-    }
-
-    if (!_enrolled) {
-      return FaceEnrollmentScreen(
-        onComplete: () => setState(() => _enrolled = true),
-      );
-    }
-
     return const MainShell();
   }
 }
