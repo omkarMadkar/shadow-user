@@ -2,12 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'providers/sentinel_provider.dart';
 import 'providers/voice_sentinel_provider.dart';
+import 'providers/keystroke_provider.dart';
 import 'providers/auth_provider.dart';
 import 'theme/sentinel_theme.dart';
 import 'screens/dashboard_screen.dart';
 import 'screens/email_threat_screen.dart';
 import 'screens/neural_camera_screen.dart';
 import 'screens/voice_sentinel_screen.dart';
+import 'screens/keystroke_sentinel_screen.dart';
 import 'screens/login_screen.dart';
 import 'widgets/sentinel_header.dart';
 
@@ -24,6 +26,7 @@ void main() async {
         ChangeNotifierProvider.value(value: authProvider),
         ChangeNotifierProvider(create: (_) => SentinelProvider()),
         ChangeNotifierProvider(create: (_) => VoiceSentinelProvider()),
+        ChangeNotifierProvider(create: (_) => KeystrokeProvider()),
       ],
       child: const ShadowSentinelApp(),
     ),
@@ -106,6 +109,7 @@ class _MainShellState extends State<MainShell> {
     EmailThreatScreen(),
     NeuralCameraScreen(),
     VoiceSentinelScreen(),
+    KeystrokeSentinelScreen(),
   ];
 
   @override
@@ -192,6 +196,14 @@ class _MainShellState extends State<MainShell> {
               icon: Icon(Icons.mic),
               activeIcon: _ActiveNavIcon(Icons.mic, const Color(0xFF8B5CF6)),
               label: 'VOICE SENTINEL',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.keyboard_alt_outlined),
+              activeIcon: _ActiveNavIcon(
+                Icons.keyboard_alt_outlined,
+                const Color(0xFFF59E0B),
+              ),
+              label: 'KEYSTROKE',
             ),
           ],
         ),

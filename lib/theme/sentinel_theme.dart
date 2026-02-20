@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 
 /// Shadow Sentinel design system — "Zero Trust" aesthetic.
+/// Google Fonts removed for offline / macOS security compatibility.
 class SentinelTheme {
   SentinelTheme._();
 
@@ -73,9 +73,13 @@ class SentinelTheme {
     }
   }
 
-  // ─── Fonts ──────────────────────────────────────────────
-  static TextStyle get mono => GoogleFonts.jetBrainsMono();
-  static TextStyle get sans => GoogleFonts.inter();
+  // ─── Fonts (Offline Safe) ───────────────────────────────
+  // Using system fonts instead of Google Fonts
+  static TextStyle get mono =>
+      const TextStyle(fontFamily: 'monospace', color: textPrimary);
+
+  static TextStyle get sans =>
+      const TextStyle(fontFamily: 'sans-serif', color: textPrimary);
 
   // ─── Theme Data ─────────────────────────────────────────
   static ThemeData get darkTheme {
@@ -89,9 +93,7 @@ class SentinelTheme {
         surface: surface,
         error: alertRed,
       ),
-      textTheme: GoogleFonts.interTextTheme(
-        ThemeData.dark().textTheme,
-      ).apply(
+      textTheme: const TextTheme().apply(
         bodyColor: textPrimary,
         displayColor: textPrimary,
       ),
@@ -104,10 +106,10 @@ class SentinelTheme {
         ),
       ),
       dividerColor: border,
-      appBarTheme: AppBarTheme(
+      appBarTheme: const AppBarTheme(
         backgroundColor: surface,
         elevation: 0,
-        titleTextStyle: GoogleFonts.inter(
+        titleTextStyle: TextStyle(
           fontSize: 16,
           fontWeight: FontWeight.w700,
           color: textPrimary,
@@ -122,10 +124,7 @@ class SentinelTheme {
       gradient: const LinearGradient(
         begin: Alignment.topLeft,
         end: Alignment.bottomRight,
-        colors: [
-          Color(0xCC111827),
-          Color(0x991A2332),
-        ],
+        colors: [Color(0xCC111827), Color(0x991A2332)],
       ),
       borderRadius: BorderRadius.circular(12),
       border: Border.all(

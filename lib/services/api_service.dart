@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
+import '../models/models.dart';
 
 /// API Service for Shadow Sentinel Backend communication.
 ///
@@ -186,64 +187,68 @@ class ApiService {
   /// Detect threats from activity metadata.
   ///
   /// Returns a [ThreatDetectResult] with threat score and safety score.
-  // Future<ThreatDetectResult> detectThreats({
-  //   required String userId,
-  //   String? activeWindow,
-  //   String? activeApp,
-  //   List<String> recentUrls = const [],
-  //   List<String> appsRunning = const [],
-  //   int? hourOfDay,
-  //   int? sessionDurationMinutes,
-  //   bool demoMode = true,
-  //   double? simulateThreat,
-  //   bool simulatePhishing = false,
-  //   bool simulateBurnout = false,
-  // }) async {
-  //   try {
-  //     final response = await _post('/api/threat/detect', {
-  //       'user_id': userId,
-  //       'activity': {
-  //         'active_window': activeWindow,
-  //         'active_app': activeApp,
-  //         'recent_urls': recentUrls,
-  //         'apps_running': appsRunning,
-  //         'hour_of_day': hourOfDay ?? DateTime.now().hour,
-  //         'session_duration_minutes': sessionDurationMinutes,
-  //       },
-  //       'demo_mode': demoMode,
-  //       if (simulateThreat != null) 'simulate_threat': simulateThreat,
-  //       'simulate_phishing': simulatePhishing,
-  //       'simulate_burnout': simulateBurnout,
-  //     });
+  Future<ThreatDetectResult> detectThreats({
+    required String userId,
+    String? activeWindow,
+    String? activeApp,
+    List<String> recentUrls = const [],
+    List<String> appsRunning = const [],
+    int? hourOfDay,
+    int? sessionDurationMinutes,
+    bool demoMode = true,
+    double? simulateThreat,
+    bool simulatePhishing = false,
+    bool simulateBurnout = false,
+  }) async {
+    try {
+      final response = await _post('/api/threat/detect', {
+        'user_id': userId,
+        'activity': {
+          'active_window': activeWindow,
+          'active_app': activeApp,
+          'recent_urls': recentUrls,
+          'apps_running': appsRunning,
+          'hour_of_day': hourOfDay ?? DateTime.now().hour,
+          'session_duration_minutes': sessionDurationMinutes,
+        },
+        'demo_mode': demoMode,
+        if (simulateThreat != null) 'simulate_threat': simulateThreat,
+        'simulate_phishing': simulatePhishing,
+        'simulate_burnout': simulateBurnout,
+      });
 
-  //     if (response != null && response['success'] == true) {
-  //       return ThreatDetectResult(
-  //         success: true,
-  //         threatScore: (response['threat_score'] ?? 0).toDouble(),
-  //         safetyScore: (response['safety_score'] ?? 90).toDouble(),
-  //         riskLevel: response['risk_level'] ?? 'LOW',
-  //         burnoutRisk: (response['burnout_risk'] ?? 20).toDouble(),
-  //         productivityScore: (response['productivity_score'] ?? 75).toDouble(),
-  //         recommendation: response['recommendation'] ?? '',
-  //         threatsDetected: _parseThreats(response['threats_detected']),
-  //       );
-  //     }
-  //   } catch (e) {
-  //     debugPrint('[ApiService] Threat detect error: $e');
-  //   }
+      if (response != null && response['success'] == true) {
+        // return ThreatDetectResult(
+        //   success: true,
+        //   threatScore: (response['threat_score'] ?? 0).toDouble(),
+        //   safetyScore: (response['safety_score'] ?? 90).toDouble(),
+        //   riskLevel: response['risk_level'] ?? 'LOW',
+        //   burnoutRisk: (response['burnout_risk'] ?? 20).toDouble(),
+        //   productivityScore: (response['productivity_score'] ?? 75).toDouble(),
+        //   recommendation: response['recommendation'] ?? '',
+        //   //threatsDetected: _parseThreats(response['threats_detected']),
+        // );
+      }
+    } catch (e) {
+      debugPrint('[ApiService] Threat detect error: $e');
+    }
 
-  //   return ThreatDetectResult.fallback();
-  // }
+    return ThreatDetectResult.fallback();
+  }
 
   // List<ThreatInfo> _parseThreats(dynamic threats) {
   //   if (threats == null || threats is! List) return [];
-  //   return threats.map<ThreatInfo>((t) => ThreatInfo(
-  //     type: t['type'] ?? 'unknown',
-  //     severity: t['severity'] ?? 'low',
-  //     description: t['description'] ?? '',
-  //     indicator: t['indicator'] ?? '',
-  //     confidence: (t['confidence'] ?? 50).toDouble(),
-  //   )).toList();
+  //   return threats
+  //       .map<ThreatInfo>(
+  //         (t) => ThreatInfo(
+  //           type: t['type'] ?? 'unknown',
+  //           severity: t['severity'] ?? 'low',
+  //           description: t['description'] ?? '',
+  //           indicator: t['indicator'] ?? '',
+  //           confidence: (t['confidence'] ?? 50).toDouble(),
+  //         ),
+  //       )
+  //       .toList();
   // }
 
   // ─── Trust Score ─────────────────────────────────────────────
@@ -432,23 +437,6 @@ class KeystrokeAnalysisResult {
     riskLevel: 'LOW',
     recommendation: 'Fallback mode',
   );
-}
-
-/// Individual threat information.
-class ThreatInfo {
-  final String type;
-  final String severity;
-  final String description;
-  final String indicator;
-  final double confidence;
-
-  const ThreatInfo({
-    required this.type,
-    required this.severity,
-    required this.description,
-    required this.indicator,
-    required this.confidence,
-  });
 }
 
 /// Result from threat detection API.

@@ -156,7 +156,7 @@ class CameraService {
         !_controller!.value.isInitialized) {
       return null;
     }
-    return CameraPreview(controller: _controller!);
+    return CameraPreview(_controller!);
   }
 
   /// Pause the camera preview.
