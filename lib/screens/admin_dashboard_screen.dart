@@ -9,9 +9,7 @@ import 'admin_user_detail_screen.dart';
 /// Tapping a user card drills into their detailed stats, alerts, and
 /// transcripts via [AdminUserDetailScreen].
 class AdminDashboardScreen extends StatefulWidget {
-  final String monitoredUserEmail;
-
-  const AdminDashboardScreen({super.key, required this.monitoredUserEmail});
+  const AdminDashboardScreen({super.key});
 
   @override
   State<AdminDashboardScreen> createState() => _AdminDashboardScreenState();
@@ -192,8 +190,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
           ),
           // Refresh
           IconButton(
-            icon:
-                Icon(Icons.refresh, color: SentinelTheme.textMuted, size: 20),
+            icon: Icon(Icons.refresh, color: SentinelTheme.textMuted, size: 20),
             onPressed: _loadData,
             tooltip: 'Refresh data',
           ),
@@ -222,11 +219,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(
-                      Icons.logout,
-                      size: 14,
-                      color: SentinelTheme.alertRed,
-                    ),
+                    Icon(Icons.logout, size: 14, color: SentinelTheme.alertRed),
                     const SizedBox(width: 6),
                     Text(
                       'EXIT',
@@ -321,8 +314,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
     final flagged = (stats['flaggedChunks'] as int?) ?? 0;
 
     final hasAlerts = alerts > 0;
-    final accentColor =
-        hasAlerts ? SentinelTheme.alertRed : SentinelTheme.cyberBlue;
+    final accentColor = hasAlerts
+        ? SentinelTheme.alertRed
+        : SentinelTheme.cyberBlue;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
@@ -344,9 +338,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
             decoration: BoxDecoration(
               color: SentinelTheme.surface.withValues(alpha: 0.6),
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color: accentColor.withValues(alpha: 0.25),
-              ),
+              border: Border.all(color: accentColor.withValues(alpha: 0.25)),
             ),
             child: Column(
               children: [

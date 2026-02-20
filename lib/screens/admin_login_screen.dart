@@ -17,9 +17,6 @@ class _AdminLoginScreenState extends State<AdminLoginScreen>
     with SingleTickerProviderStateMixin {
   final _usernameController = TextEditingController();
   final _passwordController = TextEditingController();
-  final _monitoredEmailController = TextEditingController(
-    text: 'vedantkale362@gmail.com',
-  );
   bool _obscurePassword = true;
 
   late AnimationController _glowController;
@@ -42,7 +39,6 @@ class _AdminLoginScreenState extends State<AdminLoginScreen>
     _glowController.dispose();
     _usernameController.dispose();
     _passwordController.dispose();
-    _monitoredEmailController.dispose();
     super.dispose();
   }
 
@@ -278,24 +274,6 @@ class _AdminLoginScreenState extends State<AdminLoginScreen>
                   setState(() => _obscurePassword = !_obscurePassword),
             ),
           ),
-          const SizedBox(height: 14),
-
-          // Monitored user email
-          _buildField(
-            controller: _monitoredEmailController,
-            label: 'MONITORED USER EMAIL',
-            icon: Icons.person_search_outlined,
-            hint: 'user@example.com',
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Enter the email of the user whose activity you want to review.',
-            style: SentinelTheme.sans.copyWith(
-              fontSize: 10,
-              color: SentinelTheme.textMuted,
-            ),
-          ),
-
           const SizedBox(height: 20),
 
           // Error
@@ -439,21 +417,15 @@ class _AdminLoginScreenState extends State<AdminLoginScreen>
     final auth = context.read<AuthProvider>();
     final username = _usernameController.text.trim();
     final password = _passwordController.text.trim();
-    final monitoredEmail = _monitoredEmailController.text.trim();
 
     if (username.isEmpty || password.isEmpty) return;
 
-    final success = await auth.signInAsAdmin(
-      username,
-      password,
-      monitoredEmail: monitoredEmail.isNotEmpty ? monitoredEmail : null,
-    );
+    final success = await auth.signInAsAdmin(username, password);
 
     if (success && mounted) {
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(
-          builder: (_) =>
-              AdminDashboardScreen(monitoredUserEmail: monitoredEmail),
+          builder: (_) => const AdminDashboardScreen(),
         ),
       );
     }

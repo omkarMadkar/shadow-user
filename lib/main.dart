@@ -89,9 +89,7 @@ class _AuthGate extends StatelessWidget {
 
     // Admin users go to oversight dashboard
     if (auth.isAdminLogin) {
-      return AdminDashboardScreen(
-        monitoredUserEmail: auth.monitoredUserEmail ?? '',
-      );
+      return const AdminDashboardScreen();
     }
 
     // Tag voice sessions with the current user's email

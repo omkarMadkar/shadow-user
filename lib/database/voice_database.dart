@@ -26,8 +26,7 @@ class MonitoredUsers extends Table {
 /// Voice recording sessions.
 class VoiceSessions extends Table {
   TextColumn get id => text()();
-  TextColumn get userEmail =>
-      text().withDefault(const Constant('unknown'))();
+  TextColumn get userEmail => text().withDefault(const Constant('unknown'))();
   DateTimeColumn get startTime => dateTime()();
   DateTimeColumn get endTime => dateTime().nullable()();
   TextColumn get status => text().withDefault(const Constant('recording'))();
@@ -196,20 +195,19 @@ class VoiceDatabase extends _$VoiceDatabase {
   }
 
   /// Get all monitored users ordered by last login.
-  Future<List<MonitoredUser>> getAllMonitoredUsers() =>
-      (select(monitoredUsers)
-            ..orderBy([(t) => OrderingTerm.desc(t.lastLogin)]))
-          .get();
+  Future<List<MonitoredUser>> getAllMonitoredUsers() => (select(
+    monitoredUsers,
+  )..orderBy([(t) => OrderingTerm.desc(t.lastLogin)])).get();
 
   /// Get a single monitored user by uid.
-  Future<MonitoredUser?> getMonitoredUserByUid(String uid) =>
-      (select(monitoredUsers)..where((t) => t.uid.equals(uid)))
-          .getSingleOrNull();
+  Future<MonitoredUser?> getMonitoredUserByUid(String uid) => (select(
+    monitoredUsers,
+  )..where((t) => t.uid.equals(uid))).getSingleOrNull();
 
   /// Get a single monitored user by email.
-  Future<MonitoredUser?> getMonitoredUserByEmail(String email) =>
-      (select(monitoredUsers)..where((t) => t.email.equals(email)))
-          .getSingleOrNull();
+  Future<MonitoredUser?> getMonitoredUserByEmail(String email) => (select(
+    monitoredUsers,
+  )..where((t) => t.email.equals(email))).getSingleOrNull();
 
   /// Count of monitored users.
   Future<int> getMonitoredUserCount() async {
@@ -258,16 +256,17 @@ class VoiceDatabase extends _$VoiceDatabase {
     int totalChunks = 0;
     int flaggedChunks = 0;
     if (sessionIds.isNotEmpty) {
-      final alerts = await (select(voiceAlerts)
-            ..where((t) => t.sessionId.isIn(sessionIds)))
-          .get();
+      final alerts = await (select(
+        voiceAlerts,
+      )..where((t) => t.sessionId.isIn(sessionIds))).get();
       totalAlerts = alerts.length;
-      final chunks = await (select(voiceChunks)
-            ..where((t) => t.sessionId.isIn(sessionIds)))
-          .get();
+      final chunks = await (select(
+        voiceChunks,
+      )..where((t) => t.sessionId.isIn(sessionIds))).get();
       totalChunks = chunks.length;
-      flaggedChunks =
-          chunks.where((c) => c.severity != 'clean' && c.severity.isNotEmpty).length;
+      flaggedChunks = chunks
+          .where((c) => c.severity != 'clean' && c.severity.isNotEmpty)
+          .length;
     }
     return {
       'totalSessions': sessions.length,

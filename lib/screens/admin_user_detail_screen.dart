@@ -252,8 +252,9 @@ class _AdminUserDetailScreenState extends State<AdminUserDetailScreen>
                       label,
                       style: SentinelTheme.mono.copyWith(
                         fontSize: 10,
-                        fontWeight:
-                            isSelected ? FontWeight.w700 : FontWeight.w400,
+                        fontWeight: isSelected
+                            ? FontWeight.w700
+                            : FontWeight.w400,
                         color: isSelected
                             ? SentinelTheme.alertRed
                             : SentinelTheme.textMuted,
@@ -367,8 +368,7 @@ class _AdminUserDetailScreenState extends State<AdminUserDetailScreen>
                         color: SentinelTheme.cyberBlue.withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(6),
                         border: Border.all(
-                          color:
-                              SentinelTheme.cyberBlue.withValues(alpha: 0.2),
+                          color: SentinelTheme.cyberBlue.withValues(alpha: 0.2),
                         ),
                       ),
                       child: Text(
@@ -446,8 +446,9 @@ class _AdminUserDetailScreenState extends State<AdminUserDetailScreen>
               padding: const EdgeInsets.all(16),
               child: Column(
                 children: _alertBreakdown.entries.map((entry) {
-                  final maxVal = _alertBreakdown.values
-                      .reduce((a, b) => a > b ? a : b);
+                  final maxVal = _alertBreakdown.values.reduce(
+                    (a, b) => a > b ? a : b,
+                  );
                   final ratio = maxVal > 0 ? entry.value / maxVal : 0.0;
                   return Padding(
                     padding: const EdgeInsets.only(bottom: 10),
@@ -479,8 +480,9 @@ class _AdminUserDetailScreenState extends State<AdminUserDetailScreen>
                                 child: Container(
                                   height: 16,
                                   decoration: BoxDecoration(
-                                    color: _alertTypeColor(entry.key)
-                                        .withValues(alpha: 0.4),
+                                    color: _alertTypeColor(
+                                      entry.key,
+                                    ).withValues(alpha: 0.4),
                                     borderRadius: BorderRadius.circular(4),
                                   ),
                                 ),
@@ -544,11 +546,11 @@ class _AdminUserDetailScreenState extends State<AdminUserDetailScreen>
           Row(
             children: [
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                 decoration: BoxDecoration(
-                  color: _alertTypeColor(alert.alertType)
-                      .withValues(alpha: 0.15),
+                  color: _alertTypeColor(
+                    alert.alertType,
+                  ).withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(4),
                 ),
                 child: Text(
@@ -563,11 +565,9 @@ class _AdminUserDetailScreenState extends State<AdminUserDetailScreen>
               ),
               const SizedBox(width: 8),
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                 decoration: BoxDecoration(
-                  color:
-                      _severityColor(alert.severity).withValues(alpha: 0.15),
+                  color: _severityColor(alert.severity).withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(4),
                 ),
                 child: Text(
@@ -703,8 +703,9 @@ class _AdminUserDetailScreenState extends State<AdminUserDetailScreen>
                         vertical: 2,
                       ),
                       decoration: BoxDecoration(
-                        color: _severityColor(chunk.severity)
-                            .withValues(alpha: 0.15),
+                        color: _severityColor(
+                          chunk.severity,
+                        ).withValues(alpha: 0.15),
                         borderRadius: BorderRadius.circular(4),
                       ),
                       child: Text(
@@ -759,30 +760,33 @@ class _AdminUserDetailScreenState extends State<AdminUserDetailScreen>
                       .split(',')
                       .where((w) => w.trim().isNotEmpty)
                       .map((word) {
-                    return Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 6,
-                        vertical: 2,
-                      ),
-                      decoration: BoxDecoration(
-                        color:
-                            SentinelTheme.alertRed.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(4),
-                        border: Border.all(
-                          color: SentinelTheme.alertRed
-                              .withValues(alpha: 0.2),
-                        ),
-                      ),
-                      child: Text(
-                        word.trim(),
-                        style: SentinelTheme.mono.copyWith(
-                          fontSize: 9,
-                          color: SentinelTheme.alertRed,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    );
-                  }).toList(),
+                        return Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: SentinelTheme.alertRed.withValues(
+                              alpha: 0.1,
+                            ),
+                            borderRadius: BorderRadius.circular(4),
+                            border: Border.all(
+                              color: SentinelTheme.alertRed.withValues(
+                                alpha: 0.2,
+                              ),
+                            ),
+                          ),
+                          child: Text(
+                            word.trim(),
+                            style: SentinelTheme.mono.copyWith(
+                              fontSize: 9,
+                              color: SentinelTheme.alertRed,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        );
+                      })
+                      .toList(),
                 ),
               ],
             ],
@@ -804,8 +808,9 @@ class _AdminUserDetailScreenState extends State<AdminUserDetailScreen>
       itemCount: _sessions.length,
       itemBuilder: (_, i) {
         final session = _sessions[i];
-        final durationMin =
-            (session.totalDurationMs / 60000).toStringAsFixed(1);
+        final durationMin = (session.totalDurationMs / 60000).toStringAsFixed(
+          1,
+        );
         return Container(
           margin: const EdgeInsets.only(bottom: 10),
           decoration: _cardDecor(),
@@ -815,11 +820,7 @@ class _AdminUserDetailScreenState extends State<AdminUserDetailScreen>
             children: [
               Row(
                 children: [
-                  Icon(
-                    Icons.history,
-                    size: 14,
-                    color: SentinelTheme.cyberBlue,
-                  ),
+                  Icon(Icons.history, size: 14, color: SentinelTheme.cyberBlue),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
