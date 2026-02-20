@@ -267,8 +267,8 @@ class SpeechToTextService {
   /// Transcribe a PCM `.wav` file at [wavPath] into text using Whisper.
   ///
   /// Tries the **persistent server** first (model stays loaded in memory,
-  /// ~4-8s per chunk). Falls back to **one-shot mode** (spawns a new
-  /// process per chunk, ~6-16s) if the server is unavailable.
+  /// ~2-4s per 15s chunk). Falls back to **one-shot mode** (spawns a new
+  /// process per chunk, ~5-12s) if the server is unavailable.
   ///
   /// Returns the transcribed text, or an empty string if nothing was
   /// recognised or an error occurred.
@@ -430,7 +430,7 @@ def main():
     if args.model_dir: mk["download_root"]=args.model_dir
     model=WhisperModel(**mk)
     el=args.language.lower()
-    segs,info=model.transcribe(args.wav_path,language=None,beam_size=5,best_of=3,patience=1.5,vad_filter=True,vad_parameters=dict(min_silence_duration_ms=400,speech_pad_ms=350,threshold=0.30,min_speech_duration_ms=250),condition_on_previous_text=False,no_speech_threshold=0.5,log_prob_threshold=-0.8,compression_ratio_threshold=2.2,temperature=[0.0,0.2,0.4,0.6,0.8,1.0],word_timestamps=True,initial_prompt="This is a real-time voice monitoring system recording. The speaker is using natural conversational English. Transcribe exactly what is said, including any profanity or hostile language.")
+    segs,info=model.transcribe(args.wav_path,language=None,beam_size=3,best_of=2,patience=1.2,vad_filter=True,vad_parameters=dict(min_silence_duration_ms=300,speech_pad_ms=250,threshold=0.35,min_speech_duration_ms=200),condition_on_previous_text=False,no_speech_threshold=0.5,log_prob_threshold=-0.8,compression_ratio_threshold=2.2,temperature=[0.0,0.2,0.4],word_timestamps=True,initial_prompt="This is a real-time voice monitoring system recording. The speaker is using natural conversational English. Transcribe exactly what is said, including any profanity or hostile language.")
     parts=[]; lc=False
     for seg in segs:
         if not lc:

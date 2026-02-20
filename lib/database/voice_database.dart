@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
 import 'package:path_provider/path_provider.dart';
@@ -28,6 +29,7 @@ class VoiceChunks extends Table {
   TextColumn get id => text()();
   TextColumn get sessionId => text().references(VoiceSessions, #id)();
   TextColumn get filePath => text()();
+  BlobColumn get audioData => blob().nullable()();
   IntColumn get durationMs => integer()();
   DateTimeColumn get timestamp => dateTime()();
   RealColumn get volumeDb => real()();
@@ -62,7 +64,17 @@ class VoiceDatabase extends _$VoiceDatabase {
   VoiceDatabase() : super(_openConnection());
 
   @override
-  int get schemaVersion => 1;
+  int get schemaVersion => 2;
+
+  @override
+  MigrationStrategy get migration => MigrationStrategy(
+    onUpgrade: (migrator, from, to) async {
+      if (from < 2) {
+        // Add audioData BLOB column to voice_chunks table
+        await migrator.addColumn(voiceChunks, voiceChunks.audioData);
+      }
+    },
+  );
 
   // ── Session Operations ───────────────────────────────────
 
@@ -95,6 +107,20 @@ class VoiceDatabase extends _$VoiceDatabase {
       (update(voiceChunks)..where((t) => t.id.equals(id))).write(
         VoiceChunksCompanion(transcript: Value(transcript)),
       );
+
+  /// Store audio bytes (WAV data) for a chunk in the database.
+  Future<void> updateChunkAudioData(String id, Uint8List audioBytes) =>
+      (update(voiceChunks)..where((t) => t.id.equals(id))).write(
+        VoiceChunksCompanion(audioData: Value(audioBytes)),
+      );
+
+  /// Retrieve audio bytes for a chunk from the database.
+  Future<Uint8List?> getChunkAudioData(String id) async {
+    final chunk = await (select(
+      voiceChunks,
+    )..where((t) => t.id.equals(id))).getSingleOrNull();
+    return chunk?.audioData;
+  }
 
   Future<int> getChunkCount() async {
     final count = voiceChunks.id.count();

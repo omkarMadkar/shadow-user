@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:drift/drift.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
@@ -71,7 +72,9 @@ class VoiceSentinelProvider extends SentinelModuleProvider {
 
   // ── Chunk Recording ──────────────────────────────────────
   /// Duration in seconds for each audio chunk.
-  static const int chunkDurationSeconds = 30;
+  /// 15s balances low latency (~18-22s end-to-end) with enough context
+  /// for accurate Whisper transcription.
+  static const int chunkDurationSeconds = 15;
 
   int _currentChunkNumber = 0;
   int _chunkSecondsElapsed = 0;
@@ -371,18 +374,14 @@ class VoiceSentinelProvider extends SentinelModuleProvider {
 
   // ── Playback ─────────────────────────────────────────────
 
-  /// Play a recorded audio chunk file.
+  /// Play a recorded audio chunk file. Falls back to reading audio from the
+  /// database if the physical file is not found on disk.
   Future<void> playChunk(String filePath) async {
     try {
       // Resolve absolute path
       String absPath = filePath;
       if (!p.isAbsolute(filePath) && _chunksDir != null) {
         absPath = p.join(_chunksDir!, p.basename(filePath));
-      }
-
-      if (!File(absPath).existsSync()) {
-        debugPrint('[VoiceSentinel] File not found: $absPath');
-        return;
       }
 
       // Stop any current playback
@@ -394,7 +393,41 @@ class VoiceSentinelProvider extends SentinelModuleProvider {
       _isPlaying = true;
       notifyListeners();
 
-      await _player.play(DeviceFileSource(absPath));
+      if (File(absPath).existsSync()) {
+        // Play from disk file
+        await _player.play(DeviceFileSource(absPath));
+      } else {
+        // File not on disk — try to recover from database BLOB
+        debugPrint(
+          '[VoiceSentinel] File not on disk, loading from DB: $filePath',
+        );
+        final chunkId = _findChunkIdByFilePath(filePath);
+        if (chunkId != null) {
+          final audioBytes = await _db.getChunkAudioData(chunkId);
+          if (audioBytes != null && audioBytes.isNotEmpty) {
+            // Write to a temp file and play
+            final tempPath = p.join(
+              _chunksDir ?? Directory.systemTemp.path,
+              'playback_${DateTime.now().millisecondsSinceEpoch}.wav',
+            );
+            await File(tempPath).writeAsBytes(audioBytes);
+            await _player.play(DeviceFileSource(tempPath));
+            debugPrint('[VoiceSentinel] Playing from DB audio data');
+          } else {
+            debugPrint('[VoiceSentinel] No audio data in DB for $chunkId');
+            _isPlaying = false;
+            _playingChunkPath = null;
+            notifyListeners();
+            return;
+          }
+        } else {
+          debugPrint('[VoiceSentinel] Chunk not found for path: $filePath');
+          _isPlaying = false;
+          _playingChunkPath = null;
+          notifyListeners();
+          return;
+        }
+      }
     } catch (e) {
       debugPrint('[VoiceSentinel] Playback error: $e');
       _isPlaying = false;
@@ -565,7 +598,7 @@ class VoiceSentinelProvider extends SentinelModuleProvider {
 
     // Brief delay for OS to finish flushing the completed WAV to disk
     // (runs in parallel with the new chunk already recording).
-    await Future.delayed(const Duration(milliseconds: 250));
+    await Future.delayed(const Duration(milliseconds: 100));
 
     // Create a chunk entry for the completed chunk & queue for transcription.
     if (actualChunkPath != null && await File(actualChunkPath).exists()) {
@@ -583,6 +616,7 @@ class VoiceSentinelProvider extends SentinelModuleProvider {
   }
 
   /// Create a VoiceAudioChunk entry in the feed and persist to database.
+  /// Also reads the WAV file bytes and stores them as a BLOB in SQLite.
   void _createChunkEntry(String filePath, int chunkNumber, Duration duration) {
     final chunkId = generateId('vc');
 
@@ -617,7 +651,29 @@ class VoiceSentinelProvider extends SentinelModuleProvider {
       ),
     );
 
+    // Read the WAV file bytes and store them as a BLOB in the database.
+    // This ensures audio is persisted in DB even if the physical file is
+    // deleted or moved later.
+    _storeAudioBytesInDb(chunkId, filePath);
+
     notifyListeners();
+  }
+
+  /// Reads the WAV file from disk and stores its bytes in the database.
+  Future<void> _storeAudioBytesInDb(String chunkId, String filePath) async {
+    try {
+      final file = File(filePath);
+      if (await file.exists()) {
+        final Uint8List audioBytes = await file.readAsBytes();
+        await _db.updateChunkAudioData(chunkId, audioBytes);
+        debugPrint(
+          '[VoiceSentinel] Audio stored in DB for $chunkId '
+          '(${(audioBytes.length / 1024).toStringAsFixed(1)} KB)',
+        );
+      }
+    } catch (e) {
+      debugPrint('[VoiceSentinel] Failed to store audio in DB: $e');
+    }
   }
 
   // ── Transcription Queue ──────────────────────────────────
@@ -879,6 +935,18 @@ class VoiceSentinelProvider extends SentinelModuleProvider {
   }
 
   // ── Helpers ──────────────────────────────────────────────
+
+  /// Find the chunk ID from the in-memory list by matching the file path.
+  String? _findChunkIdByFilePath(String filePath) {
+    final basename = p.basename(filePath);
+    for (final chunk in _recentChunks) {
+      if (chunk.filePath == filePath ||
+          p.basename(chunk.filePath) == basename) {
+        return chunk.id;
+      }
+    }
+    return null;
+  }
 
   LanguageAlertType _parseAlertType(String type) {
     switch (type) {

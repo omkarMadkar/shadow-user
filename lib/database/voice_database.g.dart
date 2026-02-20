@@ -556,6 +556,17 @@ class $VoiceChunksTable extends VoiceChunks
     type: DriftSqlType.string,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _audioDataMeta = const VerificationMeta(
+    'audioData',
+  );
+  @override
+  late final GeneratedColumn<Uint8List> audioData = GeneratedColumn<Uint8List>(
+    'audio_data',
+    aliasedName,
+    true,
+    type: DriftSqlType.blob,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _durationMsMeta = const VerificationMeta(
     'durationMs',
   );
@@ -629,6 +640,7 @@ class $VoiceChunksTable extends VoiceChunks
     id,
     sessionId,
     filePath,
+    audioData,
     durationMs,
     timestamp,
     volumeDb,
@@ -668,6 +680,12 @@ class $VoiceChunksTable extends VoiceChunks
       );
     } else if (isInserting) {
       context.missing(_filePathMeta);
+    }
+    if (data.containsKey('audio_data')) {
+      context.handle(
+        _audioDataMeta,
+        audioData.isAcceptableOrUnknown(data['audio_data']!, _audioDataMeta),
+      );
     }
     if (data.containsKey('duration_ms')) {
       context.handle(
@@ -735,6 +753,10 @@ class $VoiceChunksTable extends VoiceChunks
         DriftSqlType.string,
         data['${effectivePrefix}file_path'],
       )!,
+      audioData: attachedDatabase.typeMapping.read(
+        DriftSqlType.blob,
+        data['${effectivePrefix}audio_data'],
+      ),
       durationMs: attachedDatabase.typeMapping.read(
         DriftSqlType.int,
         data['${effectivePrefix}duration_ms'],
@@ -772,6 +794,7 @@ class VoiceChunk extends DataClass implements Insertable<VoiceChunk> {
   final String id;
   final String sessionId;
   final String filePath;
+  final Uint8List? audioData;
   final int durationMs;
   final DateTime timestamp;
   final double volumeDb;
@@ -782,6 +805,7 @@ class VoiceChunk extends DataClass implements Insertable<VoiceChunk> {
     required this.id,
     required this.sessionId,
     required this.filePath,
+    this.audioData,
     required this.durationMs,
     required this.timestamp,
     required this.volumeDb,
@@ -795,6 +819,9 @@ class VoiceChunk extends DataClass implements Insertable<VoiceChunk> {
     map['id'] = Variable<String>(id);
     map['session_id'] = Variable<String>(sessionId);
     map['file_path'] = Variable<String>(filePath);
+    if (!nullToAbsent || audioData != null) {
+      map['audio_data'] = Variable<Uint8List>(audioData);
+    }
     map['duration_ms'] = Variable<int>(durationMs);
     map['timestamp'] = Variable<DateTime>(timestamp);
     map['volume_db'] = Variable<double>(volumeDb);
@@ -811,6 +838,9 @@ class VoiceChunk extends DataClass implements Insertable<VoiceChunk> {
       id: Value(id),
       sessionId: Value(sessionId),
       filePath: Value(filePath),
+      audioData: audioData == null && nullToAbsent
+          ? const Value.absent()
+          : Value(audioData),
       durationMs: Value(durationMs),
       timestamp: Value(timestamp),
       volumeDb: Value(volumeDb),
@@ -831,6 +861,7 @@ class VoiceChunk extends DataClass implements Insertable<VoiceChunk> {
       id: serializer.fromJson<String>(json['id']),
       sessionId: serializer.fromJson<String>(json['sessionId']),
       filePath: serializer.fromJson<String>(json['filePath']),
+      audioData: serializer.fromJson<Uint8List?>(json['audioData']),
       durationMs: serializer.fromJson<int>(json['durationMs']),
       timestamp: serializer.fromJson<DateTime>(json['timestamp']),
       volumeDb: serializer.fromJson<double>(json['volumeDb']),
@@ -846,6 +877,7 @@ class VoiceChunk extends DataClass implements Insertable<VoiceChunk> {
       'id': serializer.toJson<String>(id),
       'sessionId': serializer.toJson<String>(sessionId),
       'filePath': serializer.toJson<String>(filePath),
+      'audioData': serializer.toJson<Uint8List?>(audioData),
       'durationMs': serializer.toJson<int>(durationMs),
       'timestamp': serializer.toJson<DateTime>(timestamp),
       'volumeDb': serializer.toJson<double>(volumeDb),
@@ -859,6 +891,7 @@ class VoiceChunk extends DataClass implements Insertable<VoiceChunk> {
     String? id,
     String? sessionId,
     String? filePath,
+    Value<Uint8List?> audioData = const Value.absent(),
     int? durationMs,
     DateTime? timestamp,
     double? volumeDb,
@@ -869,6 +902,7 @@ class VoiceChunk extends DataClass implements Insertable<VoiceChunk> {
     id: id ?? this.id,
     sessionId: sessionId ?? this.sessionId,
     filePath: filePath ?? this.filePath,
+    audioData: audioData.present ? audioData.value : this.audioData,
     durationMs: durationMs ?? this.durationMs,
     timestamp: timestamp ?? this.timestamp,
     volumeDb: volumeDb ?? this.volumeDb,
@@ -881,6 +915,7 @@ class VoiceChunk extends DataClass implements Insertable<VoiceChunk> {
       id: data.id.present ? data.id.value : this.id,
       sessionId: data.sessionId.present ? data.sessionId.value : this.sessionId,
       filePath: data.filePath.present ? data.filePath.value : this.filePath,
+      audioData: data.audioData.present ? data.audioData.value : this.audioData,
       durationMs: data.durationMs.present
           ? data.durationMs.value
           : this.durationMs,
@@ -902,6 +937,7 @@ class VoiceChunk extends DataClass implements Insertable<VoiceChunk> {
           ..write('id: $id, ')
           ..write('sessionId: $sessionId, ')
           ..write('filePath: $filePath, ')
+          ..write('audioData: $audioData, ')
           ..write('durationMs: $durationMs, ')
           ..write('timestamp: $timestamp, ')
           ..write('volumeDb: $volumeDb, ')
@@ -917,6 +953,7 @@ class VoiceChunk extends DataClass implements Insertable<VoiceChunk> {
     id,
     sessionId,
     filePath,
+    $driftBlobEquality.hash(audioData),
     durationMs,
     timestamp,
     volumeDb,
@@ -931,6 +968,7 @@ class VoiceChunk extends DataClass implements Insertable<VoiceChunk> {
           other.id == this.id &&
           other.sessionId == this.sessionId &&
           other.filePath == this.filePath &&
+          $driftBlobEquality.equals(other.audioData, this.audioData) &&
           other.durationMs == this.durationMs &&
           other.timestamp == this.timestamp &&
           other.volumeDb == this.volumeDb &&
@@ -943,6 +981,7 @@ class VoiceChunksCompanion extends UpdateCompanion<VoiceChunk> {
   final Value<String> id;
   final Value<String> sessionId;
   final Value<String> filePath;
+  final Value<Uint8List?> audioData;
   final Value<int> durationMs;
   final Value<DateTime> timestamp;
   final Value<double> volumeDb;
@@ -954,6 +993,7 @@ class VoiceChunksCompanion extends UpdateCompanion<VoiceChunk> {
     this.id = const Value.absent(),
     this.sessionId = const Value.absent(),
     this.filePath = const Value.absent(),
+    this.audioData = const Value.absent(),
     this.durationMs = const Value.absent(),
     this.timestamp = const Value.absent(),
     this.volumeDb = const Value.absent(),
@@ -966,6 +1006,7 @@ class VoiceChunksCompanion extends UpdateCompanion<VoiceChunk> {
     required String id,
     required String sessionId,
     required String filePath,
+    this.audioData = const Value.absent(),
     required int durationMs,
     required DateTime timestamp,
     required double volumeDb,
@@ -983,6 +1024,7 @@ class VoiceChunksCompanion extends UpdateCompanion<VoiceChunk> {
     Expression<String>? id,
     Expression<String>? sessionId,
     Expression<String>? filePath,
+    Expression<Uint8List>? audioData,
     Expression<int>? durationMs,
     Expression<DateTime>? timestamp,
     Expression<double>? volumeDb,
@@ -995,6 +1037,7 @@ class VoiceChunksCompanion extends UpdateCompanion<VoiceChunk> {
       if (id != null) 'id': id,
       if (sessionId != null) 'session_id': sessionId,
       if (filePath != null) 'file_path': filePath,
+      if (audioData != null) 'audio_data': audioData,
       if (durationMs != null) 'duration_ms': durationMs,
       if (timestamp != null) 'timestamp': timestamp,
       if (volumeDb != null) 'volume_db': volumeDb,
@@ -1009,6 +1052,7 @@ class VoiceChunksCompanion extends UpdateCompanion<VoiceChunk> {
     Value<String>? id,
     Value<String>? sessionId,
     Value<String>? filePath,
+    Value<Uint8List?>? audioData,
     Value<int>? durationMs,
     Value<DateTime>? timestamp,
     Value<double>? volumeDb,
@@ -1021,6 +1065,7 @@ class VoiceChunksCompanion extends UpdateCompanion<VoiceChunk> {
       id: id ?? this.id,
       sessionId: sessionId ?? this.sessionId,
       filePath: filePath ?? this.filePath,
+      audioData: audioData ?? this.audioData,
       durationMs: durationMs ?? this.durationMs,
       timestamp: timestamp ?? this.timestamp,
       volumeDb: volumeDb ?? this.volumeDb,
@@ -1042,6 +1087,9 @@ class VoiceChunksCompanion extends UpdateCompanion<VoiceChunk> {
     }
     if (filePath.present) {
       map['file_path'] = Variable<String>(filePath.value);
+    }
+    if (audioData.present) {
+      map['audio_data'] = Variable<Uint8List>(audioData.value);
     }
     if (durationMs.present) {
       map['duration_ms'] = Variable<int>(durationMs.value);
@@ -1073,6 +1121,7 @@ class VoiceChunksCompanion extends UpdateCompanion<VoiceChunk> {
           ..write('id: $id, ')
           ..write('sessionId: $sessionId, ')
           ..write('filePath: $filePath, ')
+          ..write('audioData: $audioData, ')
           ..write('durationMs: $durationMs, ')
           ..write('timestamp: $timestamp, ')
           ..write('volumeDb: $volumeDb, ')
@@ -2154,6 +2203,7 @@ typedef $$VoiceChunksTableCreateCompanionBuilder =
       required String id,
       required String sessionId,
       required String filePath,
+      Value<Uint8List?> audioData,
       required int durationMs,
       required DateTime timestamp,
       required double volumeDb,
@@ -2167,6 +2217,7 @@ typedef $$VoiceChunksTableUpdateCompanionBuilder =
       Value<String> id,
       Value<String> sessionId,
       Value<String> filePath,
+      Value<Uint8List?> audioData,
       Value<int> durationMs,
       Value<DateTime> timestamp,
       Value<double> volumeDb,
@@ -2234,6 +2285,11 @@ class $$VoiceChunksTableFilterComposer
 
   ColumnFilters<String> get filePath => $composableBuilder(
     column: $table.filePath,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<Uint8List> get audioData => $composableBuilder(
+    column: $table.audioData,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -2335,6 +2391,11 @@ class $$VoiceChunksTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<Uint8List> get audioData => $composableBuilder(
+    column: $table.audioData,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<int> get durationMs => $composableBuilder(
     column: $table.durationMs,
     builder: (column) => ColumnOrderings(column),
@@ -2403,6 +2464,9 @@ class $$VoiceChunksTableAnnotationComposer
 
   GeneratedColumn<String> get filePath =>
       $composableBuilder(column: $table.filePath, builder: (column) => column);
+
+  GeneratedColumn<Uint8List> get audioData =>
+      $composableBuilder(column: $table.audioData, builder: (column) => column);
 
   GeneratedColumn<int> get durationMs => $composableBuilder(
     column: $table.durationMs,
@@ -2508,6 +2572,7 @@ class $$VoiceChunksTableTableManager
                 Value<String> id = const Value.absent(),
                 Value<String> sessionId = const Value.absent(),
                 Value<String> filePath = const Value.absent(),
+                Value<Uint8List?> audioData = const Value.absent(),
                 Value<int> durationMs = const Value.absent(),
                 Value<DateTime> timestamp = const Value.absent(),
                 Value<double> volumeDb = const Value.absent(),
@@ -2519,6 +2584,7 @@ class $$VoiceChunksTableTableManager
                 id: id,
                 sessionId: sessionId,
                 filePath: filePath,
+                audioData: audioData,
                 durationMs: durationMs,
                 timestamp: timestamp,
                 volumeDb: volumeDb,
@@ -2532,6 +2598,7 @@ class $$VoiceChunksTableTableManager
                 required String id,
                 required String sessionId,
                 required String filePath,
+                Value<Uint8List?> audioData = const Value.absent(),
                 required int durationMs,
                 required DateTime timestamp,
                 required double volumeDb,
@@ -2543,6 +2610,7 @@ class $$VoiceChunksTableTableManager
                 id: id,
                 sessionId: sessionId,
                 filePath: filePath,
+                audioData: audioData,
                 durationMs: durationMs,
                 timestamp: timestamp,
                 volumeDb: volumeDb,
