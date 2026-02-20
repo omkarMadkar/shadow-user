@@ -665,9 +665,9 @@ class _LoginScreenState extends State<LoginScreen>
       color: Colors.transparent,
       child: InkWell(
         onTap: () {
-          Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => const AdminLoginScreen()),
-          );
+          Navigator.of(
+            context,
+          ).push(MaterialPageRoute(builder: (_) => const AdminLoginScreen()));
         },
         borderRadius: BorderRadius.circular(10),
         child: Container(

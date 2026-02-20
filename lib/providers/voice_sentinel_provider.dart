@@ -28,6 +28,13 @@ import 'sentinel_module_provider.dart';
 class VoiceSentinelProvider extends SentinelModuleProvider {
   final VoiceDatabase _db = VoiceDatabase();
 
+  // ── User Association ─────────────────────────────────────
+  /// The email of the currently logged-in user.
+  /// Set by the UI layer so sessions are tagged to the correct user.
+  String _currentUserEmail = 'unknown';
+  String get currentUserEmail => _currentUserEmail;
+  set currentUserEmail(String email) => _currentUserEmail = email;
+
   // ── Real Recording ───────────────────────────────────────
   final AudioRecorder _recorder = AudioRecorder();
   final AudioPlayer _player = AudioPlayer();
@@ -257,6 +264,7 @@ class VoiceSentinelProvider extends SentinelModuleProvider {
         id: _currentSessionId!,
         startTime: DateTime.now(),
         status: const Value('recording'),
+        userEmail: Value(_currentUserEmail),
       ),
     );
 

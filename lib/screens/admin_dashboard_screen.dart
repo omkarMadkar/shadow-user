@@ -3,16 +3,15 @@ import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../database/voice_database.dart';
 import '../theme/sentinel_theme.dart';
+import 'admin_user_detail_screen.dart';
 
-/// Admin oversight dashboard — displays all flagged/malicious activity
-/// from the Voice Sentinel database for the monitored user.
+/// Admin oversight dashboard — shows a roster of all monitored users.
+/// Tapping a user card drills into their detailed stats, alerts, and
+/// transcripts via [AdminUserDetailScreen].
 class AdminDashboardScreen extends StatefulWidget {
   final String monitoredUserEmail;
 
-  const AdminDashboardScreen({
-    super.key,
-    required this.monitoredUserEmail,
-  });
+  const AdminDashboardScreen({super.key, required this.monitoredUserEmail});
 
   @override
   State<AdminDashboardScreen> createState() => _AdminDashboardScreenState();
@@ -22,13 +21,15 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
     with SingleTickerProviderStateMixin {
   final VoiceDatabase _db = VoiceDatabase();
 
-  List<VoiceAlert> _alerts = [];
-  List<VoiceSession> _sessions = [];
-  List<VoiceChunk> _flaggedChunks = [];
-  List<VoiceChunk> _allChunks = [];
-  Map<String, int> _alertBreakdown = {};
+  List<MonitoredUser> _users = [];
+  Map<String, Map<String, dynamic>> _userStats = {};
   bool _loading = true;
-  int _selectedTab = 0; // 0=Overview, 1=Alerts, 2=Transcripts, 3=Sessions
+
+  // Global aggregates
+  int _totalUsers = 0;
+  int _totalSessions = 0;
+  int _totalAlerts = 0;
+  int _totalFlagged = 0;
 
   late AnimationController _pulseController;
   late Animation<double> _pulseAnim;
@@ -49,34 +50,33 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
   @override
   void dispose() {
     _pulseController.dispose();
-    _db.close();
     super.dispose();
   }
 
   Future<void> _loadData() async {
     setState(() => _loading = true);
     try {
-      final alerts = await _db.getAllAlerts();
-      final sessions = await _db.getAllSessions();
-      final breakdown = await _db.getAlertBreakdown();
+      final users = await _db.getAllMonitoredUsers();
+      final statsMap = <String, Map<String, dynamic>>{};
+      int totalSessions = 0;
+      int totalAlerts = 0;
+      int totalFlagged = 0;
 
-      // Get all chunks to find flagged ones
-      final allChunks = <VoiceChunk>[];
-      final flaggedChunks = <VoiceChunk>[];
-      for (final session in sessions) {
-        final chunks = await _db.getChunksForSession(session.id);
-        allChunks.addAll(chunks);
-        flaggedChunks.addAll(
-          chunks.where((c) => c.severity != 'clean' && c.severity.isNotEmpty),
-        );
+      for (final user in users) {
+        final stats = await _db.getUserStats(user.email);
+        statsMap[user.uid] = stats;
+        totalSessions += (stats['totalSessions'] as int?) ?? 0;
+        totalAlerts += (stats['totalAlerts'] as int?) ?? 0;
+        totalFlagged += (stats['flaggedChunks'] as int?) ?? 0;
       }
 
       setState(() {
-        _alerts = alerts;
-        _sessions = sessions;
-        _alertBreakdown = breakdown;
-        _allChunks = allChunks;
-        _flaggedChunks = flaggedChunks;
+        _users = users;
+        _userStats = statsMap;
+        _totalUsers = users.length;
+        _totalSessions = totalSessions;
+        _totalAlerts = totalAlerts;
+        _totalFlagged = totalFlagged;
         _loading = false;
       });
     } catch (e) {
@@ -88,15 +88,12 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
-    final monitoredEmail =
-        auth.monitoredUserEmail ?? 'vedantkale362@gmail.com';
 
     return Scaffold(
       backgroundColor: SentinelTheme.bg,
       body: Column(
         children: [
-          _buildHeader(auth, monitoredEmail),
-          _buildTabBar(),
+          _buildHeader(auth),
           Expanded(
             child: _loading
                 ? Center(
@@ -105,7 +102,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                       strokeWidth: 2,
                     ),
                   )
-                : _buildTabContent(),
+                : _buildContent(),
           ),
           _buildFooter(),
         ],
@@ -115,7 +112,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
 
   // ── Header ───────────────────────────────────────────────
 
-  Widget _buildHeader(AuthProvider auth, String monitoredEmail) {
+  Widget _buildHeader(AuthProvider auth) {
     return Container(
       padding: const EdgeInsets.fromLTRB(20, 40, 20, 16),
       decoration: BoxDecoration(
@@ -182,29 +179,21 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                   ],
                 ),
                 const SizedBox(height: 4),
-                Row(
-                  children: [
-                    Icon(
-                      Icons.person_search,
-                      size: 12,
-                      color: SentinelTheme.textMuted,
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      'Monitoring: $monitoredEmail',
-                      style: SentinelTheme.mono.copyWith(
-                        fontSize: 11,
-                        color: SentinelTheme.textMuted,
-                      ),
-                    ),
-                  ],
+                Text(
+                  'MONITORED USER ROSTER',
+                  style: SentinelTheme.mono.copyWith(
+                    fontSize: 10,
+                    color: SentinelTheme.textMuted,
+                    letterSpacing: 1,
+                  ),
                 ),
               ],
             ),
           ),
           // Refresh
           IconButton(
-            icon: Icon(Icons.refresh, color: SentinelTheme.textMuted, size: 20),
+            icon:
+                Icon(Icons.refresh, color: SentinelTheme.textMuted, size: 20),
             onPressed: _loadData,
             tooltip: 'Refresh data',
           ),
@@ -258,605 +247,242 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
     );
   }
 
-  // ── Tab Bar ──────────────────────────────────────────────
+  // ── Content ──────────────────────────────────────────────
 
-  Widget _buildTabBar() {
-    final tabs = [
-      ('OVERVIEW', Icons.dashboard),
-      ('ALERTS', Icons.warning_amber),
-      ('TRANSCRIPTS', Icons.text_snippet),
-      ('SESSIONS', Icons.history),
-    ];
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      decoration: BoxDecoration(
-        color: SentinelTheme.surface.withValues(alpha: 0.5),
-        border: Border(bottom: BorderSide(color: SentinelTheme.border)),
-      ),
-      child: Row(
-        children: List.generate(tabs.length, (i) {
-          final isSelected = _selectedTab == i;
-          final (label, icon) = tabs[i];
-          return Expanded(
-            child: GestureDetector(
-              onTap: () => setState(() => _selectedTab = i),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
-                margin: const EdgeInsets.symmetric(horizontal: 4),
-                padding: const EdgeInsets.symmetric(vertical: 10),
-                decoration: BoxDecoration(
-                  color: isSelected
-                      ? SentinelTheme.alertRed.withValues(alpha: 0.1)
-                      : Colors.transparent,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(
-                    color: isSelected
-                        ? SentinelTheme.alertRed.withValues(alpha: 0.3)
-                        : Colors.transparent,
-                  ),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      icon,
-                      size: 14,
-                      color: isSelected
-                          ? SentinelTheme.alertRed
-                          : SentinelTheme.textMuted,
-                    ),
-                    const SizedBox(width: 6),
-                    Text(
-                      label,
-                      style: SentinelTheme.mono.copyWith(
-                        fontSize: 10,
-                        fontWeight:
-                            isSelected ? FontWeight.w700 : FontWeight.w400,
-                        color: isSelected
-                            ? SentinelTheme.alertRed
-                            : SentinelTheme.textMuted,
-                        letterSpacing: 0.5,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          );
-        }),
-      ),
-    );
-  }
-
-  Widget _buildTabContent() {
-    switch (_selectedTab) {
-      case 0:
-        return _buildOverviewTab();
-      case 1:
-        return _buildAlertsTab();
-      case 2:
-        return _buildTranscriptsTab();
-      case 3:
-        return _buildSessionsTab();
-      default:
-        return _buildOverviewTab();
-    }
-  }
-
-  // ── Overview Tab ─────────────────────────────────────────
-
-  Widget _buildOverviewTab() {
-    final totalAlerts = _alerts.length;
-    final totalSessions = _sessions.length;
-    final totalChunks = _allChunks.length;
-    final flaggedCount = _flaggedChunks.length;
-    final cleanRatio = totalChunks > 0
-        ? ((totalChunks - flaggedCount) / totalChunks * 100).toStringAsFixed(1)
-        : '100.0';
-
+  Widget _buildContent() {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Stats grid
-          Wrap(
-            spacing: 12,
-            runSpacing: 12,
-            children: [
-              _StatCard(
-                label: 'TOTAL ALERTS',
-                value: '$totalAlerts',
-                icon: Icons.warning_amber,
-                color: SentinelTheme.alertRed,
-              ),
-              _StatCard(
-                label: 'FLAGGED CHUNKS',
-                value: '$flaggedCount',
-                icon: Icons.flag,
-                color: SentinelTheme.alertAmber,
-              ),
-              _StatCard(
-                label: 'TOTAL SESSIONS',
-                value: '$totalSessions',
-                icon: Icons.history,
-                color: SentinelTheme.cyberBlue,
-              ),
-              _StatCard(
-                label: 'TOTAL CHUNKS',
-                value: '$totalChunks',
-                icon: Icons.mic,
-                color: SentinelTheme.cyberCyan,
-              ),
-              _StatCard(
-                label: 'CLEAN RATIO',
-                value: '$cleanRatio%',
-                icon: Icons.check_circle_outline,
-                color: SentinelTheme.alertGreen,
-              ),
-            ],
-          ),
-
+          // Global stats bar
+          _buildGlobalStats(),
           const SizedBox(height: 24),
 
-          // Alert breakdown
-          if (_alertBreakdown.isNotEmpty) ...[
-            _sectionHeader('ALERT BREAKDOWN BY TYPE'),
-            const SizedBox(height: 12),
-            Container(
-              decoration: _cardDecor(),
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                children: _alertBreakdown.entries.map((entry) {
-                  final maxVal = _alertBreakdown.values.reduce(
-                    (a, b) => a > b ? a : b,
-                  );
-                  final ratio = maxVal > 0 ? entry.value / maxVal : 0.0;
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 10),
-                    child: Row(
-                      children: [
-                        SizedBox(
-                          width: 90,
-                          child: Text(
-                            entry.key.toUpperCase(),
-                            style: SentinelTheme.mono.copyWith(
-                              fontSize: 10,
-                              color: _alertTypeColor(entry.key),
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
+          // Section header
+          _sectionHeader('MONITORED USERS', Icons.people),
+          const SizedBox(height: 14),
+
+          if (_users.isEmpty)
+            _emptyState(
+              'No users detected yet.',
+              'Users will appear here once they sign in to Shadow Sentinel.',
+            )
+          else
+            ..._users.map((user) => _buildUserCard(user)),
+        ],
+      ),
+    );
+  }
+
+  // ── Global Stats ─────────────────────────────────────────
+
+  Widget _buildGlobalStats() {
+    return Row(
+      children: [
+        _GlobalStatChip(
+          label: 'USERS',
+          value: '$_totalUsers',
+          icon: Icons.people,
+          color: SentinelTheme.cyberBlue,
+        ),
+        const SizedBox(width: 12),
+        _GlobalStatChip(
+          label: 'SESSIONS',
+          value: '$_totalSessions',
+          icon: Icons.history,
+          color: SentinelTheme.cyberCyan,
+        ),
+        const SizedBox(width: 12),
+        _GlobalStatChip(
+          label: 'ALERTS',
+          value: '$_totalAlerts',
+          icon: Icons.warning_amber,
+          color: SentinelTheme.alertRed,
+        ),
+        const SizedBox(width: 12),
+        _GlobalStatChip(
+          label: 'FLAGGED',
+          value: '$_totalFlagged',
+          icon: Icons.flag,
+          color: SentinelTheme.alertAmber,
+        ),
+      ],
+    );
+  }
+
+  // ── User Card ────────────────────────────────────────────
+
+  Widget _buildUserCard(MonitoredUser user) {
+    final stats = _userStats[user.uid] ?? {};
+    final sessions = (stats['totalSessions'] as int?) ?? 0;
+    final alerts = (stats['totalAlerts'] as int?) ?? 0;
+    final chunks = (stats['totalChunks'] as int?) ?? 0;
+    final flagged = (stats['flaggedChunks'] as int?) ?? 0;
+
+    final hasAlerts = alerts > 0;
+    final accentColor =
+        hasAlerts ? SentinelTheme.alertRed : SentinelTheme.cyberBlue;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () async {
+            await Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => AdminUserDetailScreen(user: user),
+              ),
+            );
+            // Refresh stats after returning from detail
+            _loadData();
+          },
+          borderRadius: BorderRadius.circular(12),
+          child: Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: SentinelTheme.surface.withValues(alpha: 0.6),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: accentColor.withValues(alpha: 0.25),
+              ),
+            ),
+            child: Column(
+              children: [
+                // Top row: avatar, name/email, role badge, arrow
+                Row(
+                  children: [
+                    // Avatar
+                    Container(
+                      width: 46,
+                      height: 46,
+                      decoration: BoxDecoration(
+                        color: accentColor.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: accentColor.withValues(alpha: 0.3),
                         ),
-                        Expanded(
-                          child: Stack(
-                            children: [
-                              Container(
-                                height: 16,
-                                decoration: BoxDecoration(
-                                  color: SentinelTheme.bg,
-                                  borderRadius: BorderRadius.circular(4),
-                                ),
-                              ),
-                              FractionallySizedBox(
-                                widthFactor: ratio,
-                                child: Container(
-                                  height: 16,
-                                  decoration: BoxDecoration(
-                                    color: _alertTypeColor(entry.key)
-                                        .withValues(alpha: 0.4),
-                                    borderRadius: BorderRadius.circular(4),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Text(
-                          '${entry.value}',
+                      ),
+                      child: Center(
+                        child: Text(
+                          _initials(user.displayName),
                           style: SentinelTheme.mono.copyWith(
-                            fontSize: 12,
+                            fontSize: 17,
                             fontWeight: FontWeight.w700,
-                            color: SentinelTheme.textPrimary,
+                            color: accentColor,
                           ),
                         ),
-                      ],
-                    ),
-                  );
-                }).toList(),
-              ),
-            ),
-          ],
-
-          const SizedBox(height: 24),
-
-          // Recent alerts preview
-          _sectionHeader('RECENT ALERTS'),
-          const SizedBox(height: 12),
-          ...(_alerts.take(5).map((a) => _buildAlertTile(a))),
-          if (_alerts.isEmpty)
-            _emptyState('No alerts recorded yet.'),
-        ],
-      ),
-    );
-  }
-
-  // ── Alerts Tab ───────────────────────────────────────────
-
-  Widget _buildAlertsTab() {
-    if (_alerts.isEmpty) {
-      return Center(child: _emptyState('No alerts recorded.'));
-    }
-
-    return ListView.builder(
-      padding: const EdgeInsets.all(16),
-      itemCount: _alerts.length,
-      itemBuilder: (_, i) => _buildAlertTile(_alerts[i]),
-    );
-  }
-
-  Widget _buildAlertTile(VoiceAlert alert) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      decoration: _cardDecor(
-        borderColor: _alertTypeColor(alert.alertType).withValues(alpha: 0.3),
-      ),
-      padding: const EdgeInsets.all(14),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                  color: _alertTypeColor(alert.alertType).withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: Text(
-                  alert.alertType.toUpperCase(),
-                  style: SentinelTheme.mono.copyWith(
-                    fontSize: 9,
-                    fontWeight: FontWeight.w700,
-                    color: _alertTypeColor(alert.alertType),
-                    letterSpacing: 0.5,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                  color: _severityColor(alert.severity).withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: Text(
-                  alert.severity.toUpperCase(),
-                  style: SentinelTheme.mono.copyWith(
-                    fontSize: 9,
-                    fontWeight: FontWeight.w700,
-                    color: _severityColor(alert.severity),
-                    letterSpacing: 0.5,
-                  ),
-                ),
-              ),
-              const Spacer(),
-              Text(
-                _formatTime(alert.timestamp),
-                style: SentinelTheme.mono.copyWith(
-                  fontSize: 9,
-                  color: SentinelTheme.textMuted,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Icon(
-                Icons.format_quote,
-                size: 14,
-                color: SentinelTheme.alertRed.withValues(alpha: 0.6),
-              ),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  alert.flaggedPhrase,
-                  style: SentinelTheme.mono.copyWith(
-                    fontSize: 12,
-                    color: SentinelTheme.alertRed,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          Text(
-            alert.context,
-            style: SentinelTheme.sans.copyWith(
-              fontSize: 11,
-              color: SentinelTheme.textMuted,
-            ),
-          ),
-          const SizedBox(height: 6),
-          Row(
-            children: [
-              Text(
-                'Confidence: ${alert.confidenceScore.toStringAsFixed(0)}%',
-                style: SentinelTheme.mono.copyWith(
-                  fontSize: 9,
-                  color: SentinelTheme.textMuted,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Text(
-                'Session: ${alert.sessionId.substring(0, alert.sessionId.length.clamp(0, 16))}',
-                style: SentinelTheme.mono.copyWith(
-                  fontSize: 9,
-                  color: SentinelTheme.textMuted,
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ── Transcripts Tab ──────────────────────────────────────
-
-  Widget _buildTranscriptsTab() {
-    // Show all chunks that have a non-empty, non-placeholder transcript
-    final transcribedChunks = _allChunks.where((c) {
-      final t = c.transcript;
-      return t != null &&
-          t.isNotEmpty &&
-          t != 'Transcribing...' &&
-          !t.startsWith('(No speech');
-    }).toList();
-
-    if (transcribedChunks.isEmpty) {
-      return Center(child: _emptyState('No transcriptions available.'));
-    }
-
-    return ListView.builder(
-      padding: const EdgeInsets.all(16),
-      itemCount: transcribedChunks.length,
-      itemBuilder: (_, i) {
-        final chunk = transcribedChunks[i];
-        final isFlagged = chunk.severity != 'clean';
-        return Container(
-          margin: const EdgeInsets.only(bottom: 10),
-          decoration: _cardDecor(
-            borderColor: isFlagged
-                ? SentinelTheme.alertRed.withValues(alpha: 0.3)
-                : null,
-          ),
-          padding: const EdgeInsets.all(14),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Icon(
-                    isFlagged ? Icons.flag : Icons.mic,
-                    size: 14,
-                    color: isFlagged
-                        ? SentinelTheme.alertRed
-                        : SentinelTheme.cyberBlue,
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'Chunk ${chunk.id.substring(0, chunk.id.length.clamp(0, 16))}',
-                      style: SentinelTheme.mono.copyWith(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                        color: SentinelTheme.textPrimary,
                       ),
                     ),
-                  ),
-                  if (isFlagged)
+                    const SizedBox(width: 14),
+                    // Name & email
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            user.displayName,
+                            style: SentinelTheme.sans.copyWith(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w700,
+                              color: SentinelTheme.textPrimary,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            user.email,
+                            style: SentinelTheme.mono.copyWith(
+                              fontSize: 11,
+                              color: SentinelTheme.textMuted,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    // Role badge
                     Container(
                       padding: const EdgeInsets.symmetric(
-                        horizontal: 6,
-                        vertical: 2,
+                        horizontal: 8,
+                        vertical: 3,
                       ),
                       decoration: BoxDecoration(
-                        color: _severityColor(chunk.severity)
-                            .withValues(alpha: 0.15),
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: Text(
-                        chunk.severity.toUpperCase(),
-                        style: SentinelTheme.mono.copyWith(
-                          fontSize: 8,
-                          fontWeight: FontWeight.w700,
-                          color: _severityColor(chunk.severity),
-                        ),
-                      ),
-                    ),
-                  const SizedBox(width: 8),
-                  Text(
-                    _formatTime(chunk.timestamp),
-                    style: SentinelTheme.mono.copyWith(
-                      fontSize: 9,
-                      color: SentinelTheme.textMuted,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 10),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: SentinelTheme.bg,
-                  borderRadius: BorderRadius.circular(6),
-                  border: Border.all(
-                    color: isFlagged
-                        ? SentinelTheme.alertRed.withValues(alpha: 0.15)
-                        : SentinelTheme.border,
-                  ),
-                ),
-                child: Text(
-                  chunk.transcript ?? '',
-                  style: SentinelTheme.sans.copyWith(
-                    fontSize: 12,
-                    color: isFlagged
-                        ? SentinelTheme.alertRed.withValues(alpha: 0.9)
-                        : SentinelTheme.textPrimary.withValues(alpha: 0.8),
-                    height: 1.5,
-                  ),
-                ),
-              ),
-              if (chunk.flaggedWords.isNotEmpty) ...[
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 6,
-                  runSpacing: 4,
-                  children: chunk.flaggedWords.split(',').where((w) => w.trim().isNotEmpty).map((word) {
-                    return Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 6,
-                        vertical: 2,
-                      ),
-                      decoration: BoxDecoration(
-                        color: SentinelTheme.alertRed.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(4),
+                        color: accentColor.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(6),
                         border: Border.all(
-                          color: SentinelTheme.alertRed.withValues(alpha: 0.2),
+                          color: accentColor.withValues(alpha: 0.2),
                         ),
                       ),
                       child: Text(
-                        word.trim(),
+                        user.role.toUpperCase(),
                         style: SentinelTheme.mono.copyWith(
                           fontSize: 9,
-                          color: SentinelTheme.alertRed,
-                          fontWeight: FontWeight.w600,
+                          fontWeight: FontWeight.w700,
+                          color: accentColor,
+                          letterSpacing: 0.5,
                         ),
                       ),
-                    );
-                  }).toList(),
-                ),
-              ],
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  // ── Sessions Tab ─────────────────────────────────────────
-
-  Widget _buildSessionsTab() {
-    if (_sessions.isEmpty) {
-      return Center(child: _emptyState('No sessions recorded.'));
-    }
-
-    return ListView.builder(
-      padding: const EdgeInsets.all(16),
-      itemCount: _sessions.length,
-      itemBuilder: (_, i) {
-        final session = _sessions[i];
-        final durationMin = (session.totalDurationMs / 60000).toStringAsFixed(1);
-        return Container(
-          margin: const EdgeInsets.only(bottom: 10),
-          decoration: _cardDecor(),
-          padding: const EdgeInsets.all(14),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Icon(Icons.history, size: 14, color: SentinelTheme.cyberBlue),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'Session: ${session.id.substring(0, session.id.length.clamp(0, 20))}…',
-                      style: SentinelTheme.mono.copyWith(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                        color: SentinelTheme.textPrimary,
-                      ),
                     ),
-                  ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 6,
-                      vertical: 2,
-                    ),
-                    decoration: BoxDecoration(
-                      color: session.status == 'recording'
-                          ? SentinelTheme.alertGreen.withValues(alpha: 0.15)
-                          : SentinelTheme.textMuted.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: Text(
-                      session.status.toUpperCase(),
-                      style: SentinelTheme.mono.copyWith(
-                        fontSize: 8,
-                        fontWeight: FontWeight.w700,
-                        color: session.status == 'recording'
-                            ? SentinelTheme.alertGreen
-                            : SentinelTheme.textMuted,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 10),
-              Row(
-                children: [
-                  _miniStat(
-                    Icons.timer,
-                    '$durationMin min',
-                    SentinelTheme.cyberBlue,
-                  ),
-                  const SizedBox(width: 16),
-                  _miniStat(
-                    Icons.mic,
-                    '${session.totalChunks} chunks',
-                    SentinelTheme.cyberCyan,
-                  ),
-                  const SizedBox(width: 16),
-                  _miniStat(
-                    Icons.warning_amber,
-                    '${session.alertCount} alerts',
-                    session.alertCount > 0
-                        ? SentinelTheme.alertRed
-                        : SentinelTheme.alertGreen,
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  Text(
-                    'Started: ${_formatTime(session.startTime)}',
-                    style: SentinelTheme.mono.copyWith(
-                      fontSize: 9,
+                    const SizedBox(width: 8),
+                    Icon(
+                      Icons.chevron_right,
                       color: SentinelTheme.textMuted,
+                      size: 22,
                     ),
-                  ),
-                  if (session.endTime != null) ...[
+                  ],
+                ),
+
+                const SizedBox(height: 14),
+
+                // Bottom row: stats chips
+                Row(
+                  children: [
+                    _UserStatChip(
+                      icon: Icons.history,
+                      label: '$sessions sessions',
+                      color: SentinelTheme.cyberBlue,
+                    ),
                     const SizedBox(width: 12),
+                    _UserStatChip(
+                      icon: Icons.mic,
+                      label: '$chunks chunks',
+                      color: SentinelTheme.cyberCyan,
+                    ),
+                    const SizedBox(width: 12),
+                    _UserStatChip(
+                      icon: Icons.warning_amber,
+                      label: '$alerts alerts',
+                      color: alerts > 0
+                          ? SentinelTheme.alertRed
+                          : SentinelTheme.alertGreen,
+                    ),
+                    const SizedBox(width: 12),
+                    _UserStatChip(
+                      icon: Icons.flag,
+                      label: '$flagged flagged',
+                      color: flagged > 0
+                          ? SentinelTheme.alertAmber
+                          : SentinelTheme.alertGreen,
+                    ),
+                    const Spacer(),
+                    // Last login
                     Text(
-                      'Ended: ${_formatTime(session.endTime!)}',
+                      'Last login: ${_formatDate(user.lastLogin)}',
                       style: SentinelTheme.mono.copyWith(
                         fontSize: 9,
                         color: SentinelTheme.textMuted,
                       ),
                     ),
                   ],
-                ],
-              ),
-            ],
+                ),
+              ],
+            ),
           ),
-        );
-      },
+        ),
+      ),
     );
   }
 
@@ -893,7 +519,15 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
 
   // ── Helpers ──────────────────────────────────────────────
 
-  Widget _sectionHeader(String title) {
+  String _initials(String name) {
+    final parts = name.trim().split(RegExp(r'\s+'));
+    if (parts.length >= 2) {
+      return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
+    }
+    return name.isNotEmpty ? name[0].toUpperCase() : '?';
+  }
+
+  Widget _sectionHeader(String title, IconData icon) {
     return Row(
       children: [
         Container(
@@ -905,6 +539,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
           ),
         ),
         const SizedBox(width: 8),
+        Icon(icon, size: 14, color: SentinelTheme.alertRed),
+        const SizedBox(width: 6),
         Text(
           title,
           style: SentinelTheme.mono.copyWith(
@@ -918,32 +554,118 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
     );
   }
 
-  Widget _emptyState(String message) {
+  Widget _emptyState(String title, String subtitle) {
     return Container(
-      padding: const EdgeInsets.all(24),
-      decoration: _cardDecor(),
+      width: double.infinity,
+      padding: const EdgeInsets.all(32),
+      decoration: BoxDecoration(
+        color: SentinelTheme.surface.withValues(alpha: 0.6),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: SentinelTheme.border),
+      ),
       child: Column(
-        mainAxisSize: MainAxisSize.min,
         children: [
           Icon(
-            Icons.check_circle_outline,
-            size: 36,
-            color: SentinelTheme.alertGreen.withValues(alpha: 0.5),
+            Icons.person_off,
+            size: 48,
+            color: SentinelTheme.textMuted.withValues(alpha: 0.4),
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 12),
           Text(
-            message,
-            style: SentinelTheme.sans.copyWith(
-              fontSize: 12,
+            title,
+            style: SentinelTheme.mono.copyWith(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
               color: SentinelTheme.textMuted,
             ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            subtitle,
+            style: SentinelTheme.sans.copyWith(
+              fontSize: 11,
+              color: SentinelTheme.textMuted.withValues(alpha: 0.6),
+            ),
+            textAlign: TextAlign.center,
           ),
         ],
       ),
     );
   }
 
-  Widget _miniStat(IconData icon, String label, Color color) {
+  String _formatDate(DateTime dt) {
+    final h = dt.hour.toString().padLeft(2, '0');
+    final m = dt.minute.toString().padLeft(2, '0');
+    return '${dt.day}/${dt.month}/${dt.year} $h:$m';
+  }
+}
+
+// ─── Small Widgets ──────────────────────────────────────────
+
+class _GlobalStatChip extends StatelessWidget {
+  final String label;
+  final String value;
+  final IconData icon;
+  final Color color;
+
+  const _GlobalStatChip({
+    required this.label,
+    required this.value,
+    required this.icon,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 12),
+        decoration: BoxDecoration(
+          color: SentinelTheme.surface.withValues(alpha: 0.6),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: color.withValues(alpha: 0.2)),
+        ),
+        child: Column(
+          children: [
+            Icon(icon, size: 18, color: color),
+            const SizedBox(height: 6),
+            Text(
+              value,
+              style: SentinelTheme.sans.copyWith(
+                fontSize: 22,
+                fontWeight: FontWeight.w800,
+                color: color,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              label,
+              style: SentinelTheme.mono.copyWith(
+                fontSize: 9,
+                color: SentinelTheme.textMuted,
+                letterSpacing: 0.5,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _UserStatChip extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color color;
+
+  const _UserStatChip({
+    required this.icon,
+    required this.label,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -954,111 +676,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
           style: SentinelTheme.mono.copyWith(fontSize: 10, color: color),
         ),
       ],
-    );
-  }
-
-  BoxDecoration _cardDecor({Color? borderColor}) {
-    return BoxDecoration(
-      color: SentinelTheme.surface.withValues(alpha: 0.6),
-      borderRadius: BorderRadius.circular(10),
-      border: Border.all(color: borderColor ?? SentinelTheme.border),
-    );
-  }
-
-  Color _alertTypeColor(String type) {
-    switch (type) {
-      case 'threat':
-        return SentinelTheme.alertRed;
-      case 'harassment':
-        return const Color(0xFFE879F9);
-      case 'hostility':
-        return SentinelTheme.alertAmber;
-      case 'profanity':
-        return const Color(0xFFF97316);
-      case 'toxic':
-        return const Color(0xFF8B5CF6);
-      default:
-        return SentinelTheme.textMuted;
-    }
-  }
-
-  Color _severityColor(String severity) {
-    switch (severity) {
-      case 'severe':
-        return SentinelTheme.alertRed;
-      case 'moderate':
-        return SentinelTheme.alertAmber;
-      case 'mild':
-        return const Color(0xFFF59E0B);
-      case 'clean':
-        return SentinelTheme.alertGreen;
-      default:
-        return SentinelTheme.textMuted;
-    }
-  }
-
-  String _formatTime(DateTime dt) {
-    final h = dt.hour.toString().padLeft(2, '0');
-    final m = dt.minute.toString().padLeft(2, '0');
-    final s = dt.second.toString().padLeft(2, '0');
-    final d = '${dt.day}/${dt.month}/${dt.year}';
-    return '$d $h:$m:$s';
-  }
-}
-
-// ─── Stat Card Widget ──────────────────────────────────────
-
-class _StatCard extends StatelessWidget {
-  final String label;
-  final String value;
-  final IconData icon;
-  final Color color;
-
-  const _StatCard({
-    required this.label,
-    required this.value,
-    required this.icon,
-    required this.color,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 170,
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: SentinelTheme.surface.withValues(alpha: 0.6),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: color.withValues(alpha: 0.2)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(icon, size: 16, color: color),
-              const SizedBox(width: 6),
-              Text(
-                label,
-                style: SentinelTheme.mono.copyWith(
-                  fontSize: 9,
-                  color: SentinelTheme.textMuted,
-                  letterSpacing: 0.5,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Text(
-            value,
-            style: SentinelTheme.sans.copyWith(
-              fontSize: 24,
-              fontWeight: FontWeight.w800,
-              color: color,
-            ),
-          ),
-        ],
-      ),
     );
   }
 }

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:drift/drift.dart' show Value;
 import 'package:flutter/foundation.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -7,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../firebase_options.dart';
 import '../models/user_profile.dart';
 import '../services/google_oauth_desktop.dart';
+import '../database/voice_database.dart';
 
 /// Manages authentication state for Shadow Sentinel.
 ///
@@ -42,6 +44,7 @@ class AuthProvider extends ChangeNotifier {
 
   // ── Internals ────────────────────────────────────────────
   StreamSubscription<User?>? _authSub;
+  final VoiceDatabase _db = VoiceDatabase();
 
   // ────────────────────────────────────────────────────────
   // Initialisation
@@ -154,6 +157,7 @@ class AuthProvider extends ChangeNotifier {
     );
 
     await _saveDemoSession();
+    await _persistUserToDb();
 
     _isLoading = false;
     notifyListeners();
@@ -321,6 +325,7 @@ class AuthProvider extends ChangeNotifier {
       _user = null;
     } else {
       _user = await _resolveFirebaseUser(firebaseUser);
+      await _persistUserToDb();
     }
     _isLoading = false;
     notifyListeners();
@@ -365,6 +370,32 @@ class AuthProvider extends ChangeNotifier {
       role: role,
       lastLogin: DateTime.now(),
     );
+  }
+
+  // ────────────────────────────────────────────────────────
+  // Persist User to Local DB (MonitoredUsers table)
+  // ────────────────────────────────────────────────────────
+
+  /// Upserts the current user into the local MonitoredUsers table
+  /// so the admin dashboard always has a complete user roster.
+  Future<void> _persistUserToDb() async {
+    if (_user == null || _isAdminLogin) return;
+    try {
+      await _db.upsertMonitoredUser(
+        MonitoredUsersCompanion.insert(
+          uid: _user!.uid,
+          displayName: _user!.displayName,
+          email: _user!.email,
+          photoUrl: Value(_user!.photoUrl),
+          role: Value(_user!.role.name),
+          firstSeen: DateTime.now(),
+          lastLogin: DateTime.now(),
+        ),
+      );
+      debugPrint('[AuthProvider] User persisted to DB: ${_user!.email}');
+    } catch (e) {
+      debugPrint('[AuthProvider] Failed to persist user to DB: $e');
+    }
   }
 
   // ────────────────────────────────────────────────────────

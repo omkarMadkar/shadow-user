@@ -452,9 +452,8 @@ class _AdminLoginScreenState extends State<AdminLoginScreen>
     if (success && mounted) {
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(
-          builder: (_) => AdminDashboardScreen(
-            monitoredUserEmail: monitoredEmail,
-          ),
+          builder: (_) =>
+              AdminDashboardScreen(monitoredUserEmail: monitoredEmail),
         ),
       );
     }

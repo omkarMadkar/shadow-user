@@ -94,6 +94,10 @@ class _AuthGate extends StatelessWidget {
       );
     }
 
+    // Tag voice sessions with the current user's email
+    final voiceProv = context.read<VoiceSentinelProvider>();
+    voiceProv.currentUserEmail = auth.user?.email ?? 'unknown';
+
     return const MainShell();
   }
 }

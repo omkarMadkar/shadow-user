@@ -9,9 +9,25 @@ part 'voice_database.g.dart';
 
 // ─── Tables ──────────────────────────────────────────────────
 
+/// Registered / monitored users.
+class MonitoredUsers extends Table {
+  TextColumn get uid => text()();
+  TextColumn get displayName => text()();
+  TextColumn get email => text()();
+  TextColumn get photoUrl => text().nullable()();
+  TextColumn get role => text().withDefault(const Constant('viewer'))();
+  DateTimeColumn get firstSeen => dateTime()();
+  DateTimeColumn get lastLogin => dateTime()();
+
+  @override
+  Set<Column> get primaryKey => {uid};
+}
+
 /// Voice recording sessions.
 class VoiceSessions extends Table {
   TextColumn get id => text()();
+  TextColumn get userEmail =>
+      text().withDefault(const Constant('unknown'))();
   DateTimeColumn get startTime => dateTime()();
   DateTimeColumn get endTime => dateTime().nullable()();
   TextColumn get status => text().withDefault(const Constant('recording'))();
@@ -59,7 +75,9 @@ class VoiceAlerts extends Table {
 
 // ─── Database ────────────────────────────────────────────────
 
-@DriftDatabase(tables: [VoiceSessions, VoiceChunks, VoiceAlerts])
+@DriftDatabase(
+  tables: [MonitoredUsers, VoiceSessions, VoiceChunks, VoiceAlerts],
+)
 class VoiceDatabase extends _$VoiceDatabase {
   /// Singleton instance.
   static VoiceDatabase? _instance;
@@ -71,14 +89,17 @@ class VoiceDatabase extends _$VoiceDatabase {
   VoiceDatabase._internal(super.e);
 
   @override
-  int get schemaVersion => 2;
+  int get schemaVersion => 3;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
     onUpgrade: (migrator, from, to) async {
       if (from < 2) {
-        // Add audioData BLOB column to voice_chunks table
         await migrator.addColumn(voiceChunks, voiceChunks.audioData);
+      }
+      if (from < 3) {
+        await migrator.createTable(monitoredUsers);
+        await migrator.addColumn(voiceSessions, voiceSessions.userEmail);
       }
     },
   );
@@ -165,6 +186,95 @@ class VoiceDatabase extends _$VoiceDatabase {
       breakdown[alert.alertType] = (breakdown[alert.alertType] ?? 0) + 1;
     }
     return breakdown;
+  }
+
+  // ── Monitored Users Operations ────────────────────────────
+
+  /// Upsert a monitored user (insert or update on conflict).
+  Future<void> upsertMonitoredUser(MonitoredUsersCompanion user) async {
+    await into(monitoredUsers).insertOnConflictUpdate(user);
+  }
+
+  /// Get all monitored users ordered by last login.
+  Future<List<MonitoredUser>> getAllMonitoredUsers() =>
+      (select(monitoredUsers)
+            ..orderBy([(t) => OrderingTerm.desc(t.lastLogin)]))
+          .get();
+
+  /// Get a single monitored user by uid.
+  Future<MonitoredUser?> getMonitoredUserByUid(String uid) =>
+      (select(monitoredUsers)..where((t) => t.uid.equals(uid)))
+          .getSingleOrNull();
+
+  /// Get a single monitored user by email.
+  Future<MonitoredUser?> getMonitoredUserByEmail(String email) =>
+      (select(monitoredUsers)..where((t) => t.email.equals(email)))
+          .getSingleOrNull();
+
+  /// Count of monitored users.
+  Future<int> getMonitoredUserCount() async {
+    final count = monitoredUsers.uid.count();
+    final query = selectOnly(monitoredUsers)..addColumns([count]);
+    final result = await query.getSingle();
+    return result.read(count) ?? 0;
+  }
+
+  // ── Per-User Filtered Queries ────────────────────────────
+
+  /// Get sessions for a specific user email.
+  Future<List<VoiceSession>> getSessionsForUser(String email) =>
+      (select(voiceSessions)
+            ..where((t) => t.userEmail.equals(email))
+            ..orderBy([(t) => OrderingTerm.desc(t.startTime)]))
+          .get();
+
+  /// Get all alerts for a specific user (via their sessions).
+  Future<List<VoiceAlert>> getAlertsForUser(String email) async {
+    final sessions = await getSessionsForUser(email);
+    final sessionIds = sessions.map((s) => s.id).toSet();
+    if (sessionIds.isEmpty) return [];
+    return (select(voiceAlerts)
+          ..where((t) => t.sessionId.isIn(sessionIds))
+          ..orderBy([(t) => OrderingTerm.desc(t.timestamp)]))
+        .get();
+  }
+
+  /// Get all chunks for a specific user (via their sessions).
+  Future<List<VoiceChunk>> getChunksForUser(String email) async {
+    final sessions = await getSessionsForUser(email);
+    final sessionIds = sessions.map((s) => s.id).toSet();
+    if (sessionIds.isEmpty) return [];
+    return (select(voiceChunks)
+          ..where((t) => t.sessionId.isIn(sessionIds))
+          ..orderBy([(t) => OrderingTerm.desc(t.timestamp)]))
+        .get();
+  }
+
+  /// Get user-level stats summary.
+  Future<Map<String, dynamic>> getUserStats(String email) async {
+    final sessions = await getSessionsForUser(email);
+    final sessionIds = sessions.map((s) => s.id).toSet();
+    int totalAlerts = 0;
+    int totalChunks = 0;
+    int flaggedChunks = 0;
+    if (sessionIds.isNotEmpty) {
+      final alerts = await (select(voiceAlerts)
+            ..where((t) => t.sessionId.isIn(sessionIds)))
+          .get();
+      totalAlerts = alerts.length;
+      final chunks = await (select(voiceChunks)
+            ..where((t) => t.sessionId.isIn(sessionIds)))
+          .get();
+      totalChunks = chunks.length;
+      flaggedChunks =
+          chunks.where((c) => c.severity != 'clean' && c.severity.isNotEmpty).length;
+    }
+    return {
+      'totalSessions': sessions.length,
+      'totalAlerts': totalAlerts,
+      'totalChunks': totalChunks,
+      'flaggedChunks': flaggedChunks,
+    };
   }
 
   // ── Stats ────────────────────────────────────────────────
