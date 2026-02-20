@@ -9,6 +9,7 @@ import 'screens/email_threat_screen.dart';
 import 'screens/neural_camera_screen.dart';
 import 'screens/voice_sentinel_screen.dart';
 import 'screens/login_screen.dart';
+import 'screens/admin_dashboard_screen.dart';
 import 'widgets/sentinel_header.dart';
 
 void main() async {
@@ -84,6 +85,13 @@ class _AuthGate extends StatelessWidget {
 
     if (!auth.isAuthenticated) {
       return const LoginScreen();
+    }
+
+    // Admin users go to oversight dashboard
+    if (auth.isAdminLogin) {
+      return AdminDashboardScreen(
+        monitoredUserEmail: auth.monitoredUserEmail ?? '',
+      );
     }
 
     return const MainShell();

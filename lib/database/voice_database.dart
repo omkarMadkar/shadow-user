@@ -61,7 +61,14 @@ class VoiceAlerts extends Table {
 
 @DriftDatabase(tables: [VoiceSessions, VoiceChunks, VoiceAlerts])
 class VoiceDatabase extends _$VoiceDatabase {
-  VoiceDatabase() : super(_openConnection());
+  /// Singleton instance.
+  static VoiceDatabase? _instance;
+
+  factory VoiceDatabase() {
+    return _instance ??= VoiceDatabase._internal(_openConnection());
+  }
+
+  VoiceDatabase._internal(super.e);
 
   @override
   int get schemaVersion => 2;

@@ -29,6 +29,14 @@ class AuthProvider extends ChangeNotifier {
   bool get isAuthenticated => _user != null;
   bool get isDemoMode => _user?.isDemo ?? false;
 
+  /// Whether the current session is an admin oversight login.
+  bool _isAdminLogin = false;
+  bool get isAdminLogin => _isAdminLogin;
+
+  /// The email of the user being monitored (viewed by admin).
+  String? _monitoredUserEmail;
+  String? get monitoredUserEmail => _monitoredUserEmail;
+
   String? _error;
   String? get error => _error;
 
@@ -79,6 +87,48 @@ class AuthProvider extends ChangeNotifier {
   // ────────────────────────────────────────────────────────
   // Sign-In Methods
   // ────────────────────────────────────────────────────────
+
+  // ── Admin Credentials (hardcoded oversight account) ──────
+  static const String _adminUsername = 'Theojod77';
+  static const String _adminPassword = 'asyouwish';
+
+  /// Sign in as the admin oversight account.
+  /// Admin can view all flagged/malicious data for any monitored user.
+  Future<bool> signInAsAdmin(
+    String username,
+    String password, {
+    String? monitoredEmail,
+  }) async {
+    _isLoading = true;
+    _error = null;
+    notifyListeners();
+
+    await Future.delayed(const Duration(milliseconds: 600));
+
+    if (username == _adminUsername && password == _adminPassword) {
+      _isAdminLogin = true;
+      _monitoredUserEmail = monitoredEmail;
+
+      _user = UserProfile(
+        uid: 'admin-oversight-${DateTime.now().millisecondsSinceEpoch}',
+        displayName: 'Admin Oversight',
+        email: 'admin@shadowsentinel.io',
+        photoUrl: null,
+        role: UserRole.admin,
+        lastLogin: DateTime.now(),
+        isDemo: false,
+      );
+
+      _isLoading = false;
+      notifyListeners();
+      return true;
+    }
+
+    _error = 'Invalid admin credentials';
+    _isLoading = false;
+    notifyListeners();
+    return false;
+  }
 
   /// Sign in as a demo user (works without Firebase).
   Future<void> signInDemo({
@@ -230,6 +280,8 @@ class AuthProvider extends ChangeNotifier {
     }
 
     _user = null;
+    _isAdminLogin = false;
+    _monitoredUserEmail = null;
     await _clearDemoSession();
 
     _isLoading = false;

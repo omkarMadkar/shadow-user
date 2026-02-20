@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../models/user_profile.dart';
 import '../theme/sentinel_theme.dart';
+import 'admin_login_screen.dart';
 
 /// Cyberpunk-themed login screen for Shadow Sentinel.
 class LoginScreen extends StatefulWidget {
@@ -78,6 +79,11 @@ class _LoginScreenState extends State<LoginScreen>
 
                     // Demo mode button
                     _buildDemoButton(auth),
+
+                    const SizedBox(height: 12),
+
+                    // Admin login button
+                    _buildAdminButton(),
 
                     const SizedBox(height: 16),
 
@@ -642,6 +648,52 @@ class _LoginScreenState extends State<LoginScreen>
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
                   color: SentinelTheme.alertAmber,
+                  letterSpacing: 1,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ── Admin Button ─────────────────────────────────────────
+
+  Widget _buildAdminButton() {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () {
+          Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const AdminLoginScreen()),
+          );
+        },
+        borderRadius: BorderRadius.circular(10),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          decoration: BoxDecoration(
+            color: SentinelTheme.surface,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: SentinelTheme.alertRed.withValues(alpha: 0.2),
+            ),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.admin_panel_settings,
+                size: 18,
+                color: SentinelTheme.alertRed.withValues(alpha: 0.7),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'ADMIN OVERSIGHT LOGIN',
+                style: SentinelTheme.mono.copyWith(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: SentinelTheme.alertRed.withValues(alpha: 0.7),
                   letterSpacing: 1,
                 ),
               ),
