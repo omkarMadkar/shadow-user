@@ -207,7 +207,10 @@ class _MainShellState extends State<MainShell> {
             ),
             BottomNavigationBarItem(
               icon: Icon(Icons.screenshot),
-              activeIcon: _ActiveNavIcon(Icons.screenshot, SentinelTheme.alertGreen),
+              activeIcon: _ActiveNavIcon(
+                Icons.screenshot,
+                SentinelTheme.alertGreen,
+              ),
               label: 'CAPTURE TEST',
             ),
           ],

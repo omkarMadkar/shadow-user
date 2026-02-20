@@ -380,3 +380,39 @@ class TranslationSummary {
     this.avgConfidence = 0.90,
   });
 }
+
+// ─── Threat Report ───────────────────────────────────────────
+
+/// Evidence bundle captured when Voice Sentinel flags bad content.
+/// Contains screenshot, face photo, audio chunk path and text context.
+class ThreatReport {
+  final String id;
+  final DateTime timestamp;
+
+  /// One of: profanity, hostility, threat, harassment, negative
+  final String alertType;
+  final VoiceSeverity severity;
+  final List<String> flaggedWords;
+  final String transcript;
+
+  /// Absolute path to the .wav audio chunk that was flagged.
+  final String audioChunkPath;
+
+  /// Absolute path to the screen capture PNG (null if capture failed).
+  final String? screenshotPath;
+
+  /// Absolute path to the webcam JPEG (null if camera unavailable).
+  final String? facePhotoPath;
+
+  const ThreatReport({
+    required this.id,
+    required this.timestamp,
+    required this.alertType,
+    required this.severity,
+    required this.flaggedWords,
+    required this.transcript,
+    required this.audioChunkPath,
+    this.screenshotPath,
+    this.facePhotoPath,
+  });
+}

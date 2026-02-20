@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -31,6 +32,7 @@ class _AdminUserDetailScreenState extends State<AdminUserDetailScreen>
   Map<String, int> _alertBreakdown = {};
   bool _loading = true;
   int _selectedTab = 0;
+  Timer? _refreshTimer;
 
   // Audio playback
   final AudioPlayer _player = AudioPlayer();
@@ -59,10 +61,15 @@ class _AdminUserDetailScreenState extends State<AdminUserDetailScreen>
       }
     });
     _loadData();
+    // Auto-refresh every 8 seconds so new alerts + captures appear live
+    _refreshTimer = Timer.periodic(const Duration(seconds: 8), (_) {
+      if (mounted) _loadData();
+    });
   }
 
   @override
   void dispose() {
+    _refreshTimer?.cancel();
     _player.dispose();
     _pulseController.dispose();
     super.dispose();
@@ -739,7 +746,164 @@ class _AdminUserDetailScreenState extends State<AdminUserDetailScreen>
               _buildPlayButton(alert.chunkId),
             ],
           ),
+          // ── Evidence thumbnails (screenshot + face) ──────────
+          if (alert.screenshotPath != null || alert.facePhotoPath != null) ...[
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Icon(
+                  Icons.camera_alt_outlined,
+                  size: 11,
+                  color: SentinelTheme.textMuted,
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  'CAPTURED EVIDENCE',
+                  style: SentinelTheme.mono.copyWith(
+                    fontSize: 8,
+                    color: SentinelTheme.textMuted,
+                    letterSpacing: 1,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Row(
+              children: [
+                _buildEvidenceThumb(
+                  context,
+                  path: alert.screenshotPath,
+                  label: 'SCREEN',
+                  icon: Icons.screenshot_monitor,
+                  color: SentinelTheme.cyberBlue,
+                ),
+                const SizedBox(width: 8),
+                _buildEvidenceThumb(
+                  context,
+                  path: alert.facePhotoPath,
+                  label: 'FACE',
+                  icon: Icons.face_retouching_natural,
+                  color: SentinelTheme.cyberCyan,
+                ),
+              ],
+            ),
+          ],
         ],
+      ),
+    );
+  }
+
+  Widget _buildEvidenceThumb(
+    BuildContext context, {
+    required String? path,
+    required String label,
+    required IconData icon,
+    required Color color,
+  }) {
+    final hasFile = path != null && File(path).existsSync();
+    return GestureDetector(
+      onTap: hasFile
+          ? () => showDialog(
+              context: context,
+              builder: (_) => Dialog(
+                backgroundColor: Colors.black87,
+                insetPadding: const EdgeInsets.all(16),
+                child: Stack(
+                  children: [
+                    InteractiveViewer(
+                      child: Image.file(File(path), fit: BoxFit.contain),
+                    ),
+                    Positioned(
+                      top: 8,
+                      right: 8,
+                      child: GestureDetector(
+                        onTap: () => Navigator.of(context).pop(),
+                        child: Container(
+                          padding: const EdgeInsets.all(6),
+                          color: Colors.black54,
+                          child: const Icon(
+                            Icons.close,
+                            size: 16,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            )
+          : null,
+      child: Container(
+        width: 100,
+        height: 62,
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.06),
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(
+            color: hasFile
+                ? color.withValues(alpha: 0.4)
+                : SentinelTheme.border,
+          ),
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(6),
+          child: hasFile
+              ? Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    Image.file(File(path!), fit: BoxFit.cover),
+                    Positioned(
+                      bottom: 0,
+                      left: 0,
+                      right: 0,
+                      child: Container(
+                        color: Colors.black54,
+                        padding: const EdgeInsets.symmetric(vertical: 2),
+                        child: Text(
+                          label,
+                          textAlign: TextAlign.center,
+                          style: SentinelTheme.mono.copyWith(
+                            fontSize: 7,
+                            color: Colors.white,
+                            letterSpacing: 1,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const Positioned(
+                      top: 4,
+                      right: 4,
+                      child: Icon(
+                        Icons.open_in_full,
+                        size: 10,
+                        color: Colors.white70,
+                      ),
+                    ),
+                  ],
+                )
+              : Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(icon, size: 18, color: SentinelTheme.textMuted),
+                    const SizedBox(height: 3),
+                    Text(
+                      label,
+                      style: SentinelTheme.mono.copyWith(
+                        fontSize: 7,
+                        color: SentinelTheme.textMuted,
+                      ),
+                    ),
+                    Text(
+                      path != null ? 'MISSING' : 'N/A',
+                      style: SentinelTheme.mono.copyWith(
+                        fontSize: 6,
+                        color: SentinelTheme.textMuted.withValues(alpha: 0.5),
+                      ),
+                    ),
+                  ],
+                ),
+        ),
       ),
     );
   }

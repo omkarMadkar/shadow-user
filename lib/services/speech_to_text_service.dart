@@ -176,7 +176,10 @@ class SpeechToTextService {
       ];
 
       debugPrint('[SpeechToText] Starting persistent Whisper server...');
-      _serverProcess = await Process.start(exe, args, runInShell: true);
+      debugPrint('[SpeechToText] exe=$exe args=$args');
+      // Do NOT use runInShell: true — on Windows, cmd.exe intercepts stdout
+      // piping and swallows the READY signal before Dart can read it.
+      _serverProcess = await Process.start(exe, args);
 
       final readyCompleter = Completer<bool>();
 

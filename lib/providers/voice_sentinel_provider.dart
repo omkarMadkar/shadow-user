@@ -12,6 +12,7 @@ import '../database/voice_database.dart';
 import '../services/mic_monitor_service.dart';
 import '../services/speech_to_text_service.dart';
 import '../services/text_analysis_service.dart';
+import '../services/screen_capture_service.dart';
 import 'sentinel_module_provider.dart';
 
 /// Voice Sentinel provider — manages mic monitoring, language analysis,
@@ -144,6 +145,10 @@ class VoiceSentinelProvider extends SentinelModuleProvider {
   // ── Chunks Feed ──────────────────────────────────────────
   final List<VoiceAudioChunk> _recentChunks = [];
   List<VoiceAudioChunk> get recentChunks => List.unmodifiable(_recentChunks);
+
+  // ── Threat Reports ───────────────────────────────────────
+  final List<ThreatReport> _threatReports = [];
+  List<ThreatReport> get threatReports => List.unmodifiable(_threatReports);
 
   // ── Alert Breakdown ──────────────────────────────────────
   final Map<LanguageAlertType, int> _alertBreakdown = {
@@ -733,9 +738,14 @@ class VoiceSentinelProvider extends SentinelModuleProvider {
         // ── Analyse the real transcription ──
         final analysis = TextAnalysisService.analyse(text);
 
-        // If flagged, generate a real alert
+        // If flagged, generate a real alert + capture evidence
         if (analysis.isFlagged) {
-          _createRealAlert(analysis, chunkNum);
+          _createRealAlert(
+            analysis,
+            chunkNum,
+            transcribedText: text,
+            audioPath: wavPath,
+          );
         }
 
         // Reveal the transcribed text word-by-word then create summary
@@ -874,9 +884,17 @@ class VoiceSentinelProvider extends SentinelModuleProvider {
   /// Create a real alert from text-analysis results.
   Future<void> _createRealAlert(
     TextAnalysisResult analysis,
-    int chunkNum,
-  ) async {
-    if (!_micActive || _currentSessionId == null || !analysis.isFlagged) return;
+    int chunkNum, {
+    required String transcribedText,
+    required String audioPath,
+  }) async {
+    // Only skip if the analysis itself isn't flagged.
+    // Do NOT guard on _micActive — transcription is async and the mic
+    // may have already moved to the next chunk by the time Whisper finishes.
+    if (!analysis.isFlagged) return;
+
+    // Snapshot session id — if null, use the last known active session or 'unknown'
+    final sessionId = _currentSessionId ?? 'vs-unknown';
 
     final alertType = _parseAlertType(analysis.alertType);
     final severity = severityFromScore(analysis.severity);
@@ -888,7 +906,7 @@ class VoiceSentinelProvider extends SentinelModuleProvider {
 
     final alert = VoiceLanguageAlert(
       id: alertId,
-      sessionId: _currentSessionId!,
+      sessionId: sessionId,
       chunkId: chunkId,
       alertType: alertType,
       severity: severity,
@@ -919,11 +937,11 @@ class VoiceSentinelProvider extends SentinelModuleProvider {
       );
     }
 
-    // Persist to database
+    // Persist alert to database (without capture paths yet)
     await _db.insertAlert(
       VoiceAlertsCompanion.insert(
         id: alertId,
-        sessionId: _currentSessionId!,
+        sessionId: sessionId,
         chunkId: chunkId,
         alertType: alertType.name,
         severity: severity.name,
@@ -940,6 +958,81 @@ class VoiceSentinelProvider extends SentinelModuleProvider {
     );
 
     notifyListeners();
+
+    // Fire-and-forget: capture screen + face, then update DB + ThreatReport
+    _captureThreatEvidence(
+      analysis,
+      alertId: alertId,
+      text: transcribedText,
+      audioPath: audioPath,
+    );
+  }
+
+  // ── Threat Evidence Capture ─────────────────────────────────
+
+  /// Capture screen + webcam using the same logic as the Capture Test screen,
+  /// then update the DB alert record with the paths and store a ThreatReport.
+  /// Runs fire-and-forget — never blocks the alert pipeline.
+  Future<void> _captureThreatEvidence(
+    TextAnalysisResult analysis, {
+    required String alertId,
+    required String text,
+    required String audioPath,
+  }) async {
+    try {
+      debugPrint(
+        '[ThreatCapture] Capturing screen + face for alert $alertId...',
+      );
+
+      // Use captureScreenAndCamera() — the same method the Capture Test screen uses.
+      // It runs both captures concurrently and returns a PairedCapture.
+      final paired = await ScreenCaptureService.captureScreenAndCamera();
+
+      final screenshotPath = paired?.screenPath;
+      final facePhotoPath = paired?.cameraPath;
+
+      debugPrint(
+        '[ThreatCapture] screenshot=${screenshotPath ?? "FAILED"}, '
+        'face=${facePhotoPath ?? "FAILED"}',
+      );
+
+      // Update the DB alert record with the capture paths so the admin panel
+      // can display them without needing a separate table.
+      if (screenshotPath != null || facePhotoPath != null) {
+        await _db.updateAlertEvidence(
+          alertId,
+          screenshotPath: screenshotPath,
+          facePhotoPath: facePhotoPath,
+        );
+      }
+
+      // Also keep an in-memory ThreatReport for the (now removed) user panel.
+      final report = ThreatReport(
+        id: generateId('tr'),
+        timestamp: DateTime.now(),
+        alertType: analysis.alertType,
+        severity: severityFromScore(analysis.severity),
+        flaggedWords: analysis.flaggedWords,
+        transcript: text,
+        audioChunkPath: audioPath,
+        screenshotPath: screenshotPath,
+        facePhotoPath: facePhotoPath,
+      );
+
+      _threatReports.insert(0, report);
+      if (_threatReports.length > 100) _threatReports.removeLast();
+
+      debugPrint(
+        '[ThreatCapture] ✅ Report created | '
+        'words: ${analysis.flaggedWords} | '
+        'screenshot: ${screenshotPath != null} | '
+        'face: ${facePhotoPath != null}',
+      );
+
+      notifyListeners();
+    } catch (e) {
+      debugPrint('[ThreatCapture] Error: $e');
+    }
   }
 
   // ── Helpers ──────────────────────────────────────────────

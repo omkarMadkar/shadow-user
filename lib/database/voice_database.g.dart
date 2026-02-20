@@ -1756,6 +1756,28 @@ class $VoiceAlertsTable extends VoiceAlerts
     type: DriftSqlType.dateTime,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _screenshotPathMeta = const VerificationMeta(
+    'screenshotPath',
+  );
+  @override
+  late final GeneratedColumn<String> screenshotPath = GeneratedColumn<String>(
+    'screenshot_path',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _facePhotoPathMeta = const VerificationMeta(
+    'facePhotoPath',
+  );
+  @override
+  late final GeneratedColumn<String> facePhotoPath = GeneratedColumn<String>(
+    'face_photo_path',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -1767,6 +1789,8 @@ class $VoiceAlertsTable extends VoiceAlerts
     context,
     confidenceScore,
     timestamp,
+    screenshotPath,
+    facePhotoPath,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -1855,6 +1879,24 @@ class $VoiceAlertsTable extends VoiceAlerts
     } else if (isInserting) {
       context.missing(_timestampMeta);
     }
+    if (data.containsKey('screenshot_path')) {
+      context.handle(
+        _screenshotPathMeta,
+        screenshotPath.isAcceptableOrUnknown(
+          data['screenshot_path']!,
+          _screenshotPathMeta,
+        ),
+      );
+    }
+    if (data.containsKey('face_photo_path')) {
+      context.handle(
+        _facePhotoPathMeta,
+        facePhotoPath.isAcceptableOrUnknown(
+          data['face_photo_path']!,
+          _facePhotoPathMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -1900,6 +1942,14 @@ class $VoiceAlertsTable extends VoiceAlerts
         DriftSqlType.dateTime,
         data['${effectivePrefix}timestamp'],
       )!,
+      screenshotPath: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}screenshot_path'],
+      ),
+      facePhotoPath: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}face_photo_path'],
+      ),
     );
   }
 
@@ -1919,6 +1969,12 @@ class VoiceAlert extends DataClass implements Insertable<VoiceAlert> {
   final String context;
   final double confidenceScore;
   final DateTime timestamp;
+
+  /// Absolute path to the screenshot PNG captured at alert time (nullable).
+  final String? screenshotPath;
+
+  /// Absolute path to the face photo JPEG captured at alert time (nullable).
+  final String? facePhotoPath;
   const VoiceAlert({
     required this.id,
     required this.sessionId,
@@ -1929,6 +1985,8 @@ class VoiceAlert extends DataClass implements Insertable<VoiceAlert> {
     required this.context,
     required this.confidenceScore,
     required this.timestamp,
+    this.screenshotPath,
+    this.facePhotoPath,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -1942,6 +2000,12 @@ class VoiceAlert extends DataClass implements Insertable<VoiceAlert> {
     map['context'] = Variable<String>(context);
     map['confidence_score'] = Variable<double>(confidenceScore);
     map['timestamp'] = Variable<DateTime>(timestamp);
+    if (!nullToAbsent || screenshotPath != null) {
+      map['screenshot_path'] = Variable<String>(screenshotPath);
+    }
+    if (!nullToAbsent || facePhotoPath != null) {
+      map['face_photo_path'] = Variable<String>(facePhotoPath);
+    }
     return map;
   }
 
@@ -1956,6 +2020,12 @@ class VoiceAlert extends DataClass implements Insertable<VoiceAlert> {
       context: Value(context),
       confidenceScore: Value(confidenceScore),
       timestamp: Value(timestamp),
+      screenshotPath: screenshotPath == null && nullToAbsent
+          ? const Value.absent()
+          : Value(screenshotPath),
+      facePhotoPath: facePhotoPath == null && nullToAbsent
+          ? const Value.absent()
+          : Value(facePhotoPath),
     );
   }
 
@@ -1974,6 +2044,8 @@ class VoiceAlert extends DataClass implements Insertable<VoiceAlert> {
       context: serializer.fromJson<String>(json['context']),
       confidenceScore: serializer.fromJson<double>(json['confidenceScore']),
       timestamp: serializer.fromJson<DateTime>(json['timestamp']),
+      screenshotPath: serializer.fromJson<String?>(json['screenshotPath']),
+      facePhotoPath: serializer.fromJson<String?>(json['facePhotoPath']),
     );
   }
   @override
@@ -1989,6 +2061,8 @@ class VoiceAlert extends DataClass implements Insertable<VoiceAlert> {
       'context': serializer.toJson<String>(context),
       'confidenceScore': serializer.toJson<double>(confidenceScore),
       'timestamp': serializer.toJson<DateTime>(timestamp),
+      'screenshotPath': serializer.toJson<String?>(screenshotPath),
+      'facePhotoPath': serializer.toJson<String?>(facePhotoPath),
     };
   }
 
@@ -2002,6 +2076,8 @@ class VoiceAlert extends DataClass implements Insertable<VoiceAlert> {
     String? context,
     double? confidenceScore,
     DateTime? timestamp,
+    Value<String?> screenshotPath = const Value.absent(),
+    Value<String?> facePhotoPath = const Value.absent(),
   }) => VoiceAlert(
     id: id ?? this.id,
     sessionId: sessionId ?? this.sessionId,
@@ -2012,6 +2088,12 @@ class VoiceAlert extends DataClass implements Insertable<VoiceAlert> {
     context: context ?? this.context,
     confidenceScore: confidenceScore ?? this.confidenceScore,
     timestamp: timestamp ?? this.timestamp,
+    screenshotPath: screenshotPath.present
+        ? screenshotPath.value
+        : this.screenshotPath,
+    facePhotoPath: facePhotoPath.present
+        ? facePhotoPath.value
+        : this.facePhotoPath,
   );
   VoiceAlert copyWithCompanion(VoiceAlertsCompanion data) {
     return VoiceAlert(
@@ -2028,6 +2110,12 @@ class VoiceAlert extends DataClass implements Insertable<VoiceAlert> {
           ? data.confidenceScore.value
           : this.confidenceScore,
       timestamp: data.timestamp.present ? data.timestamp.value : this.timestamp,
+      screenshotPath: data.screenshotPath.present
+          ? data.screenshotPath.value
+          : this.screenshotPath,
+      facePhotoPath: data.facePhotoPath.present
+          ? data.facePhotoPath.value
+          : this.facePhotoPath,
     );
   }
 
@@ -2042,7 +2130,9 @@ class VoiceAlert extends DataClass implements Insertable<VoiceAlert> {
           ..write('flaggedPhrase: $flaggedPhrase, ')
           ..write('context: $context, ')
           ..write('confidenceScore: $confidenceScore, ')
-          ..write('timestamp: $timestamp')
+          ..write('timestamp: $timestamp, ')
+          ..write('screenshotPath: $screenshotPath, ')
+          ..write('facePhotoPath: $facePhotoPath')
           ..write(')'))
         .toString();
   }
@@ -2058,6 +2148,8 @@ class VoiceAlert extends DataClass implements Insertable<VoiceAlert> {
     context,
     confidenceScore,
     timestamp,
+    screenshotPath,
+    facePhotoPath,
   );
   @override
   bool operator ==(Object other) =>
@@ -2071,7 +2163,9 @@ class VoiceAlert extends DataClass implements Insertable<VoiceAlert> {
           other.flaggedPhrase == this.flaggedPhrase &&
           other.context == this.context &&
           other.confidenceScore == this.confidenceScore &&
-          other.timestamp == this.timestamp);
+          other.timestamp == this.timestamp &&
+          other.screenshotPath == this.screenshotPath &&
+          other.facePhotoPath == this.facePhotoPath);
 }
 
 class VoiceAlertsCompanion extends UpdateCompanion<VoiceAlert> {
@@ -2084,6 +2178,8 @@ class VoiceAlertsCompanion extends UpdateCompanion<VoiceAlert> {
   final Value<String> context;
   final Value<double> confidenceScore;
   final Value<DateTime> timestamp;
+  final Value<String?> screenshotPath;
+  final Value<String?> facePhotoPath;
   final Value<int> rowid;
   const VoiceAlertsCompanion({
     this.id = const Value.absent(),
@@ -2095,6 +2191,8 @@ class VoiceAlertsCompanion extends UpdateCompanion<VoiceAlert> {
     this.context = const Value.absent(),
     this.confidenceScore = const Value.absent(),
     this.timestamp = const Value.absent(),
+    this.screenshotPath = const Value.absent(),
+    this.facePhotoPath = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   VoiceAlertsCompanion.insert({
@@ -2107,6 +2205,8 @@ class VoiceAlertsCompanion extends UpdateCompanion<VoiceAlert> {
     required String context,
     required double confidenceScore,
     required DateTime timestamp,
+    this.screenshotPath = const Value.absent(),
+    this.facePhotoPath = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        sessionId = Value(sessionId),
@@ -2127,6 +2227,8 @@ class VoiceAlertsCompanion extends UpdateCompanion<VoiceAlert> {
     Expression<String>? context,
     Expression<double>? confidenceScore,
     Expression<DateTime>? timestamp,
+    Expression<String>? screenshotPath,
+    Expression<String>? facePhotoPath,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -2139,6 +2241,8 @@ class VoiceAlertsCompanion extends UpdateCompanion<VoiceAlert> {
       if (context != null) 'context': context,
       if (confidenceScore != null) 'confidence_score': confidenceScore,
       if (timestamp != null) 'timestamp': timestamp,
+      if (screenshotPath != null) 'screenshot_path': screenshotPath,
+      if (facePhotoPath != null) 'face_photo_path': facePhotoPath,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -2153,6 +2257,8 @@ class VoiceAlertsCompanion extends UpdateCompanion<VoiceAlert> {
     Value<String>? context,
     Value<double>? confidenceScore,
     Value<DateTime>? timestamp,
+    Value<String?>? screenshotPath,
+    Value<String?>? facePhotoPath,
     Value<int>? rowid,
   }) {
     return VoiceAlertsCompanion(
@@ -2165,6 +2271,8 @@ class VoiceAlertsCompanion extends UpdateCompanion<VoiceAlert> {
       context: context ?? this.context,
       confidenceScore: confidenceScore ?? this.confidenceScore,
       timestamp: timestamp ?? this.timestamp,
+      screenshotPath: screenshotPath ?? this.screenshotPath,
+      facePhotoPath: facePhotoPath ?? this.facePhotoPath,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -2199,6 +2307,12 @@ class VoiceAlertsCompanion extends UpdateCompanion<VoiceAlert> {
     if (timestamp.present) {
       map['timestamp'] = Variable<DateTime>(timestamp.value);
     }
+    if (screenshotPath.present) {
+      map['screenshot_path'] = Variable<String>(screenshotPath.value);
+    }
+    if (facePhotoPath.present) {
+      map['face_photo_path'] = Variable<String>(facePhotoPath.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -2217,6 +2331,8 @@ class VoiceAlertsCompanion extends UpdateCompanion<VoiceAlert> {
           ..write('context: $context, ')
           ..write('confidenceScore: $confidenceScore, ')
           ..write('timestamp: $timestamp, ')
+          ..write('screenshotPath: $screenshotPath, ')
+          ..write('facePhotoPath: $facePhotoPath, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -3504,6 +3620,8 @@ typedef $$VoiceAlertsTableCreateCompanionBuilder =
       required String context,
       required double confidenceScore,
       required DateTime timestamp,
+      Value<String?> screenshotPath,
+      Value<String?> facePhotoPath,
       Value<int> rowid,
     });
 typedef $$VoiceAlertsTableUpdateCompanionBuilder =
@@ -3517,6 +3635,8 @@ typedef $$VoiceAlertsTableUpdateCompanionBuilder =
       Value<String> context,
       Value<double> confidenceScore,
       Value<DateTime> timestamp,
+      Value<String?> screenshotPath,
+      Value<String?> facePhotoPath,
       Value<int> rowid,
     });
 
@@ -3604,6 +3724,16 @@ class $$VoiceAlertsTableFilterComposer
 
   ColumnFilters<DateTime> get timestamp => $composableBuilder(
     column: $table.timestamp,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get screenshotPath => $composableBuilder(
+    column: $table.screenshotPath,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get facePhotoPath => $composableBuilder(
+    column: $table.facePhotoPath,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -3698,6 +3828,16 @@ class $$VoiceAlertsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get screenshotPath => $composableBuilder(
+    column: $table.screenshotPath,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get facePhotoPath => $composableBuilder(
+    column: $table.facePhotoPath,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   $$VoiceSessionsTableOrderingComposer get sessionId {
     final $$VoiceSessionsTableOrderingComposer composer = $composerBuilder(
       composer: this,
@@ -3778,6 +3918,16 @@ class $$VoiceAlertsTableAnnotationComposer
 
   GeneratedColumn<DateTime> get timestamp =>
       $composableBuilder(column: $table.timestamp, builder: (column) => column);
+
+  GeneratedColumn<String> get screenshotPath => $composableBuilder(
+    column: $table.screenshotPath,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get facePhotoPath => $composableBuilder(
+    column: $table.facePhotoPath,
+    builder: (column) => column,
+  );
 
   $$VoiceSessionsTableAnnotationComposer get sessionId {
     final $$VoiceSessionsTableAnnotationComposer composer = $composerBuilder(
@@ -3863,6 +4013,8 @@ class $$VoiceAlertsTableTableManager
                 Value<String> context = const Value.absent(),
                 Value<double> confidenceScore = const Value.absent(),
                 Value<DateTime> timestamp = const Value.absent(),
+                Value<String?> screenshotPath = const Value.absent(),
+                Value<String?> facePhotoPath = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => VoiceAlertsCompanion(
                 id: id,
@@ -3874,6 +4026,8 @@ class $$VoiceAlertsTableTableManager
                 context: context,
                 confidenceScore: confidenceScore,
                 timestamp: timestamp,
+                screenshotPath: screenshotPath,
+                facePhotoPath: facePhotoPath,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -3887,6 +4041,8 @@ class $$VoiceAlertsTableTableManager
                 required String context,
                 required double confidenceScore,
                 required DateTime timestamp,
+                Value<String?> screenshotPath = const Value.absent(),
+                Value<String?> facePhotoPath = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => VoiceAlertsCompanion.insert(
                 id: id,
@@ -3898,6 +4054,8 @@ class $$VoiceAlertsTableTableManager
                 context: context,
                 confidenceScore: confidenceScore,
                 timestamp: timestamp,
+                screenshotPath: screenshotPath,
+                facePhotoPath: facePhotoPath,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0

@@ -68,6 +68,12 @@ class VoiceAlerts extends Table {
   RealColumn get confidenceScore => real()();
   DateTimeColumn get timestamp => dateTime()();
 
+  /// Absolute path to the screenshot PNG captured at alert time (nullable).
+  TextColumn get screenshotPath => text().nullable()();
+
+  /// Absolute path to the face photo JPEG captured at alert time (nullable).
+  TextColumn get facePhotoPath => text().nullable()();
+
   @override
   Set<Column> get primaryKey => {id};
 }
@@ -88,7 +94,7 @@ class VoiceDatabase extends _$VoiceDatabase {
   VoiceDatabase._internal(super.e);
 
   @override
-  int get schemaVersion => 3;
+  int get schemaVersion => 4;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -99,6 +105,10 @@ class VoiceDatabase extends _$VoiceDatabase {
       if (from < 3) {
         await migrator.createTable(monitoredUsers);
         await migrator.addColumn(voiceSessions, voiceSessions.userEmail);
+      }
+      if (from < 4) {
+        await migrator.addColumn(voiceAlerts, voiceAlerts.screenshotPath);
+        await migrator.addColumn(voiceAlerts, voiceAlerts.facePhotoPath);
       }
     },
   );
@@ -160,6 +170,18 @@ class VoiceDatabase extends _$VoiceDatabase {
 
   Future<void> insertAlert(VoiceAlertsCompanion alert) =>
       into(voiceAlerts).insert(alert);
+
+  /// Update an existing alert row with the evidence capture paths.
+  Future<void> updateAlertEvidence(
+    String id, {
+    String? screenshotPath,
+    String? facePhotoPath,
+  }) => (update(voiceAlerts)..where((t) => t.id.equals(id))).write(
+    VoiceAlertsCompanion(
+      screenshotPath: Value(screenshotPath),
+      facePhotoPath: Value(facePhotoPath),
+    ),
+  );
 
   Future<List<VoiceAlert>> getAllAlerts() => (select(
     voiceAlerts,
