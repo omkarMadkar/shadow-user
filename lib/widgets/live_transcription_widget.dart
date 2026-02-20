@@ -434,11 +434,16 @@ class _SummaryCard extends StatelessWidget {
       case 'casual':
       case 'relaxed':
       case 'transcribed':
+      case 'neutral':
         return SentinelTheme.cyberCyan;
       case 'hostile':
       case 'threatening':
       case 'offensive':
+      case 'aggressive':
         return SentinelTheme.alertRed;
+      case 'stressed':
+      case 'negative':
+        return SentinelTheme.alertAmber;
       default:
         return SentinelTheme.alertAmber;
     }
