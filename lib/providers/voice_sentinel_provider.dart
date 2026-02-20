@@ -1,6 +1,6 @@
 import 'dart:async';
-import 'dart:math';
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:drift/drift.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
@@ -12,18 +12,28 @@ import '../database/voice_database.dart';
 import '../services/mic_monitor_service.dart';
 import '../services/speech_to_text_service.dart';
 import '../services/text_analysis_service.dart';
+import 'sentinel_module_provider.dart';
 
 /// Voice Sentinel provider — manages mic monitoring, language analysis,
 /// waveform data, and persists voice sessions/alerts to SQLite via Drift.
 ///
 /// Records **real audio in 30-second chunks** via the `record` package,
-/// transcribes each chunk using the **Vosk** offline speech recognition
-/// engine, analyses the text for profanity / hostility / threats, and
-/// feeds the real transcription into the live translation display and
+/// transcribes each chunk using **OpenAI Whisper** (faster-whisper) offline
+/// speech recognition, analyses the text for profanity / hostility / threats,
+/// and feeds the real transcription into the live translation display and
 /// summary cards.
-class VoiceSentinelProvider extends ChangeNotifier {
-  final Random _rng = Random();
+///
+/// Uses a sequential transcription queue to prevent parallel Python processes
+/// from competing for memory.
+class VoiceSentinelProvider extends SentinelModuleProvider {
   final VoiceDatabase _db = VoiceDatabase();
+
+  // ── User Association ─────────────────────────────────────
+  /// The email of the currently logged-in user.
+  /// Set by the UI layer so sessions are tagged to the correct user.
+  String _currentUserEmail = 'unknown';
+  String get currentUserEmail => _currentUserEmail;
+  set currentUserEmail(String email) => _currentUserEmail = email;
 
   // ── Real Recording ───────────────────────────────────────
   final AudioRecorder _recorder = AudioRecorder();
@@ -69,12 +79,20 @@ class VoiceSentinelProvider extends ChangeNotifier {
 
   // ── Chunk Recording ──────────────────────────────────────
   /// Duration in seconds for each audio chunk.
-  static const int chunkDurationSeconds = 30;
+  /// 15s balances low latency (~18-22s end-to-end) with enough context
+  /// for accurate Whisper transcription.
+  static const int chunkDurationSeconds = 15;
 
   int _currentChunkNumber = 0;
   int _chunkSecondsElapsed = 0;
   String? _currentChunkPath;
   bool _isTranscribingChunk = false;
+
+  /// Queue of (wavPath, chunkNum) pairs waiting to be transcribed.
+  /// Only ONE transcription runs at a time to avoid parallel Python
+  /// processes fighting for memory (Whisper model is ~1.5 GB).
+  final List<(String, int)> _transcriptionQueue = [];
+  bool _isProcessingQueue = false;
 
   int get chunkSecondsElapsed => _chunkSecondsElapsed;
   bool _isRotatingChunk = false;
@@ -235,8 +253,7 @@ class VoiceSentinelProvider extends ChangeNotifier {
   Future<void> startRecording() async {
     _micActive = true;
     _sessionStatus = VoiceSessionStatus.recording;
-    _currentSessionId =
-        'vs-${DateTime.now().millisecondsSinceEpoch}-${_rng.nextInt(9999)}';
+    _currentSessionId = generateId('vs');
     _sessionDuration = Duration.zero;
     _currentChunkNumber = 0;
     _chunkSecondsElapsed = 0;
@@ -247,6 +264,7 @@ class VoiceSentinelProvider extends ChangeNotifier {
         id: _currentSessionId!,
         startTime: DateTime.now(),
         status: const Value('recording'),
+        userEmail: Value(_currentUserEmail),
       ),
     );
 
@@ -333,7 +351,7 @@ class VoiceSentinelProvider extends ChangeNotifier {
           _currentChunkNumber,
           Duration(seconds: _chunkSecondsElapsed),
         );
-        _transcribeCompletedChunk(finalPath, _currentChunkNumber);
+        _enqueueTranscription(finalPath, _currentChunkNumber);
       }
     } catch (e) {
       debugPrint('[VoiceSentinel] Error stopping recording: $e');
@@ -364,18 +382,14 @@ class VoiceSentinelProvider extends ChangeNotifier {
 
   // ── Playback ─────────────────────────────────────────────
 
-  /// Play a recorded audio chunk file.
+  /// Play a recorded audio chunk file. Falls back to reading audio from the
+  /// database if the physical file is not found on disk.
   Future<void> playChunk(String filePath) async {
     try {
       // Resolve absolute path
       String absPath = filePath;
       if (!p.isAbsolute(filePath) && _chunksDir != null) {
         absPath = p.join(_chunksDir!, p.basename(filePath));
-      }
-
-      if (!File(absPath).existsSync()) {
-        debugPrint('[VoiceSentinel] File not found: $absPath');
-        return;
       }
 
       // Stop any current playback
@@ -387,7 +401,41 @@ class VoiceSentinelProvider extends ChangeNotifier {
       _isPlaying = true;
       notifyListeners();
 
-      await _player.play(DeviceFileSource(absPath));
+      if (File(absPath).existsSync()) {
+        // Play from disk file
+        await _player.play(DeviceFileSource(absPath));
+      } else {
+        // File not on disk — try to recover from database BLOB
+        debugPrint(
+          '[VoiceSentinel] File not on disk, loading from DB: $filePath',
+        );
+        final chunkId = _findChunkIdByFilePath(filePath);
+        if (chunkId != null) {
+          final audioBytes = await _db.getChunkAudioData(chunkId);
+          if (audioBytes != null && audioBytes.isNotEmpty) {
+            // Write to a temp file and play
+            final tempPath = p.join(
+              _chunksDir ?? Directory.systemTemp.path,
+              'playback_${DateTime.now().millisecondsSinceEpoch}.wav',
+            );
+            await File(tempPath).writeAsBytes(audioBytes);
+            await _player.play(DeviceFileSource(tempPath));
+            debugPrint('[VoiceSentinel] Playing from DB audio data');
+          } else {
+            debugPrint('[VoiceSentinel] No audio data in DB for $chunkId');
+            _isPlaying = false;
+            _playingChunkPath = null;
+            notifyListeners();
+            return;
+          }
+        } else {
+          debugPrint('[VoiceSentinel] Chunk not found for path: $filePath');
+          _isPlaying = false;
+          _playingChunkPath = null;
+          notifyListeners();
+          return;
+        }
+      }
     } catch (e) {
       debugPrint('[VoiceSentinel] Playback error: $e');
       _isPlaying = false;
@@ -471,8 +519,10 @@ class VoiceSentinelProvider extends ChangeNotifier {
       }
     } catch (_) {
       // Fallback to simulation
-      final base = 0.2 + _rng.nextDouble() * 0.3;
-      final spike = _rng.nextDouble() > 0.85 ? _rng.nextDouble() * 0.5 : 0.0;
+      final base = 0.2 + moduleRng.nextDouble() * 0.3;
+      final spike = moduleRng.nextDouble() > 0.85
+          ? moduleRng.nextDouble() * 0.5
+          : 0.0;
       amplitude = (base + spike).clamp(0.0, 1.0);
     }
 
@@ -523,13 +573,10 @@ class VoiceSentinelProvider extends ChangeNotifier {
       );
     }
 
-    // Give the OS a moment to flush the WAV file to disk.
-    await Future.delayed(const Duration(milliseconds: 500));
-
     // Use the path the recorder actually saved to.
     final actualChunkPath = savedPath ?? completedChunkPath;
 
-    // Start recording the next chunk.
+    // Start recording the NEXT chunk immediately — zero gap in recording.
     _currentChunkNumber++;
     _currentChunkPath = p.join(
       _chunksDir!,
@@ -557,11 +604,15 @@ class VoiceSentinelProvider extends ChangeNotifier {
 
     _isRotatingChunk = false;
 
-    // Create a chunk entry for the completed chunk & transcribe.
+    // Brief delay for OS to finish flushing the completed WAV to disk
+    // (runs in parallel with the new chunk already recording).
+    await Future.delayed(const Duration(milliseconds: 100));
+
+    // Create a chunk entry for the completed chunk & queue for transcription.
     if (actualChunkPath != null && await File(actualChunkPath).exists()) {
       _createChunkEntry(actualChunkPath, completedChunkNumber, chunkDuration);
-      // Transcribe in background (don't await — next chunk is recording)
-      _transcribeCompletedChunk(actualChunkPath, completedChunkNumber);
+      // Queue transcription — only one runs at a time to prevent OOM
+      _enqueueTranscription(actualChunkPath, completedChunkNumber);
     } else {
       debugPrint(
         '[VoiceSentinel] Chunk $completedChunkNumber file not found '
@@ -573,9 +624,9 @@ class VoiceSentinelProvider extends ChangeNotifier {
   }
 
   /// Create a VoiceAudioChunk entry in the feed and persist to database.
+  /// Also reads the WAV file bytes and stores them as a BLOB in SQLite.
   void _createChunkEntry(String filePath, int chunkNumber, Duration duration) {
-    final chunkId =
-        'vc-${DateTime.now().millisecondsSinceEpoch}-${_rng.nextInt(9999)}';
+    final chunkId = generateId('vc');
 
     final chunk = VoiceAudioChunk(
       id: chunkId,
@@ -583,7 +634,7 @@ class VoiceSentinelProvider extends ChangeNotifier {
       filePath: filePath,
       duration: duration,
       timestamp: DateTime.now(),
-      volumeDb: -20.0 + _rng.nextDouble() * 15,
+      volumeDb: -20.0 + moduleRng.nextDouble() * 15,
       transcript: 'Transcribing...',
       severity: VoiceSeverity.clean,
       flaggedWords: [],
@@ -608,10 +659,61 @@ class VoiceSentinelProvider extends ChangeNotifier {
       ),
     );
 
+    // Read the WAV file bytes and store them as a BLOB in the database.
+    // This ensures audio is persisted in DB even if the physical file is
+    // deleted or moved later.
+    _storeAudioBytesInDb(chunkId, filePath);
+
     notifyListeners();
   }
 
-  /// Transcribe a completed audio chunk using Vosk offline speech
+  /// Reads the WAV file from disk and stores its bytes in the database.
+  Future<void> _storeAudioBytesInDb(String chunkId, String filePath) async {
+    try {
+      final file = File(filePath);
+      if (await file.exists()) {
+        final Uint8List audioBytes = await file.readAsBytes();
+        await _db.updateChunkAudioData(chunkId, audioBytes);
+        debugPrint(
+          '[VoiceSentinel] Audio stored in DB for $chunkId '
+          '(${(audioBytes.length / 1024).toStringAsFixed(1)} KB)',
+        );
+      }
+    } catch (e) {
+      debugPrint('[VoiceSentinel] Failed to store audio in DB: $e');
+    }
+  }
+
+  // ── Transcription Queue ──────────────────────────────────
+
+  /// Add a chunk to the transcription queue and start processing
+  /// if no other transcription is currently running.
+  void _enqueueTranscription(String wavPath, int chunkNum) {
+    _transcriptionQueue.add((wavPath, chunkNum));
+    debugPrint(
+      '[VoiceSentinel] Queued chunk $chunkNum for transcription '
+      '(queue length: ${_transcriptionQueue.length})',
+    );
+    if (!_isProcessingQueue) {
+      _processTranscriptionQueue();
+    }
+  }
+
+  /// Process queued chunks one at a time. Only ONE Python/Whisper
+  /// process runs at any time to prevent memory exhaustion.
+  Future<void> _processTranscriptionQueue() async {
+    if (_isProcessingQueue) return;
+    _isProcessingQueue = true;
+
+    while (_transcriptionQueue.isNotEmpty) {
+      final (wavPath, chunkNum) = _transcriptionQueue.removeAt(0);
+      await _transcribeCompletedChunk(wavPath, chunkNum);
+    }
+
+    _isProcessingQueue = false;
+  }
+
+  /// Transcribe a completed audio chunk using Whisper offline speech
   /// recognition, then analyse the text for flagged content.
   Future<void> _transcribeCompletedChunk(String wavPath, int chunkNum) async {
     _isTranscribingChunk = true;
@@ -624,6 +726,9 @@ class VoiceSentinelProvider extends ChangeNotifier {
 
       if (text.isNotEmpty) {
         debugPrint('[VoiceSentinel] Chunk $chunkNum transcribed: $text');
+
+        // ── Update the chunk entry with actual transcript ──
+        _updateChunkTranscript(chunkNum, text);
 
         // ── Analyse the real transcription ──
         final analysis = TextAnalysisService.analyse(text);
@@ -649,35 +754,51 @@ class VoiceSentinelProvider extends ChangeNotifier {
     }
   }
 
-  /// Reveal the transcribed text word-by-word in the live buffer,
+  /// Update the chunk entry in _recentChunks with the actual transcript text.
+  void _updateChunkTranscript(int chunkNum, String transcript) {
+    for (int i = 0; i < _recentChunks.length; i++) {
+      final chunk = _recentChunks[i];
+      if (chunk.transcript == 'Transcribing...' &&
+          chunk.filePath.contains('_chunk_$chunkNum.wav')) {
+        _recentChunks[i] = VoiceAudioChunk(
+          id: chunk.id,
+          sessionId: chunk.sessionId,
+          filePath: chunk.filePath,
+          duration: chunk.duration,
+          timestamp: chunk.timestamp,
+          volumeDb: chunk.volumeDb,
+          transcript: transcript,
+          severity: chunk.severity,
+          flaggedWords: chunk.flaggedWords,
+        );
+
+        // Also update the database
+        _db.updateChunkTranscript(chunk.id, transcript);
+        break;
+      }
+    }
+  }
+
+  /// Show the transcribed text instantly in the live buffer,
   /// then commit the full transcript and generate a real summary.
   void _revealTranscribedText(
     String text,
     int chunkNum, {
     TextAnalysisResult? analysis,
   }) {
-    _currentWords = text.split(' ');
-    _currentWordIndex = 0;
-    _liveTranscriptBuffer = '';
+    _wordTimer?.cancel();
+    _wordTimer = null;
 
     final result = analysis ?? TextAnalysisResult.clean;
 
-    _wordTimer?.cancel();
-    _wordTimer = Timer.periodic(const Duration(milliseconds: 80), (_) {
-      if (_currentWordIndex >= _currentWords.length) {
-        _wordTimer?.cancel();
-        _wordTimer = null;
-        // Commit the real transcript (with analysis results)
-        _commitTranscript(text, analysis: result);
-        // Create a summary from the real text (with analysis results)
-        _generateRealSummary(text, chunkNum, analysis: result);
-        return;
-      }
-      _liveTranscriptBuffer +=
-          (_currentWordIndex > 0 ? ' ' : '') + _currentWords[_currentWordIndex];
-      _currentWordIndex++;
-      notifyListeners();
-    });
+    // Show the full transcription immediately — no delay.
+    _liveTranscriptBuffer = text;
+    notifyListeners();
+
+    // Commit the real transcript (with analysis results)
+    _commitTranscript(text, analysis: result);
+    // Create a summary from the real text (with analysis results)
+    _generateRealSummary(text, chunkNum, analysis: result);
   }
 
   /// Store a real transcription segment with analysis results.
@@ -688,7 +809,7 @@ class VoiceSentinelProvider extends ChangeNotifier {
     _transcriptSegments.insert(
       0,
       TranscriptionSegment(
-        id: 'ts-${DateTime.now().millisecondsSinceEpoch}-${_rng.nextInt(9999)}',
+        id: generateId('ts'),
         text: text,
         timestamp: DateTime.now(),
         isFlagged: analysis.isFlagged,
@@ -717,7 +838,7 @@ class VoiceSentinelProvider extends ChangeNotifier {
     _translationSummaries.insert(
       0,
       TranslationSummary(
-        id: 'tls-${now.millisecondsSinceEpoch}-${_rng.nextInt(9999)}',
+        id: generateId('tls'),
         startTime: now.subtract(const Duration(seconds: chunkDurationSeconds)),
         endTime: now,
         topic: 'Audio Chunk #$chunkNum',
@@ -758,10 +879,9 @@ class VoiceSentinelProvider extends ChangeNotifier {
     if (!_micActive || _currentSessionId == null || !analysis.isFlagged) return;
 
     final alertType = _parseAlertType(analysis.alertType);
-    final severity = _severityFromScore(analysis.severity);
+    final severity = severityFromScore(analysis.severity);
 
-    final alertId =
-        'va-${DateTime.now().millisecondsSinceEpoch}-${_rng.nextInt(9999)}';
+    final alertId = generateId('va');
     final chunkId = _recentChunks.isNotEmpty
         ? _recentChunks.first.id
         : 'vc-unknown';
@@ -822,15 +942,19 @@ class VoiceSentinelProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Map a numeric severity score (0-100) to a VoiceSeverity enum.
-  VoiceSeverity _severityFromScore(int score) {
-    if (score >= 80) return VoiceSeverity.severe;
-    if (score >= 50) return VoiceSeverity.moderate;
-    if (score >= 20) return VoiceSeverity.mild;
-    return VoiceSeverity.clean;
-  }
-
   // ── Helpers ──────────────────────────────────────────────
+
+  /// Find the chunk ID from the in-memory list by matching the file path.
+  String? _findChunkIdByFilePath(String filePath) {
+    final basename = p.basename(filePath);
+    for (final chunk in _recentChunks) {
+      if (chunk.filePath == filePath ||
+          p.basename(chunk.filePath) == basename) {
+        return chunk.id;
+      }
+    }
+    return null;
+  }
 
   LanguageAlertType _parseAlertType(String type) {
     switch (type) {
@@ -868,12 +992,7 @@ class VoiceSentinelProvider extends ChangeNotifier {
     return total > 0 ? ((total - flagged) / total) * 100 : 100.0;
   }
 
-  String get formattedDuration {
-    final h = _sessionDuration.inHours;
-    final m = _sessionDuration.inMinutes % 60;
-    final s = _sessionDuration.inSeconds % 60;
-    return '${h.toString().padLeft(2, '0')}:${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
-  }
+  String get formattedDuration => formatDuration(_sessionDuration);
 
   // ── Cleanup ──────────────────────────────────────────────
 
@@ -886,6 +1005,7 @@ class VoiceSentinelProvider extends ChangeNotifier {
     _recorder.dispose();
     _player.dispose();
     _db.close();
+    SpeechToTextService.shutdown();
     super.dispose();
   }
 }

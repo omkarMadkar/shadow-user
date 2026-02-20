@@ -10,6 +10,7 @@ import 'screens/neural_camera_screen.dart';
 import 'screens/voice_sentinel_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/screen_capture_test_screen.dart';
+import 'screens/admin_dashboard_screen.dart';
 import 'widgets/sentinel_header.dart';
 
 void main() async {
@@ -86,6 +87,15 @@ class _AuthGate extends StatelessWidget {
     if (!auth.isAuthenticated) {
       return const LoginScreen();
     }
+
+    // Admin users go to oversight dashboard
+    if (auth.isAdminLogin) {
+      return const AdminDashboardScreen();
+    }
+
+    // Tag voice sessions with the current user's email
+    final voiceProv = context.read<VoiceSentinelProvider>();
+    voiceProv.currentUserEmail = auth.user?.email ?? 'unknown';
 
     return const MainShell();
   }

@@ -3,6 +3,473 @@
 part of 'voice_database.dart';
 
 // ignore_for_file: type=lint
+class $MonitoredUsersTable extends MonitoredUsers
+    with TableInfo<$MonitoredUsersTable, MonitoredUser> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $MonitoredUsersTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _uidMeta = const VerificationMeta('uid');
+  @override
+  late final GeneratedColumn<String> uid = GeneratedColumn<String>(
+    'uid',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _displayNameMeta = const VerificationMeta(
+    'displayName',
+  );
+  @override
+  late final GeneratedColumn<String> displayName = GeneratedColumn<String>(
+    'display_name',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _emailMeta = const VerificationMeta('email');
+  @override
+  late final GeneratedColumn<String> email = GeneratedColumn<String>(
+    'email',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _photoUrlMeta = const VerificationMeta(
+    'photoUrl',
+  );
+  @override
+  late final GeneratedColumn<String> photoUrl = GeneratedColumn<String>(
+    'photo_url',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _roleMeta = const VerificationMeta('role');
+  @override
+  late final GeneratedColumn<String> role = GeneratedColumn<String>(
+    'role',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('viewer'),
+  );
+  static const VerificationMeta _firstSeenMeta = const VerificationMeta(
+    'firstSeen',
+  );
+  @override
+  late final GeneratedColumn<DateTime> firstSeen = GeneratedColumn<DateTime>(
+    'first_seen',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _lastLoginMeta = const VerificationMeta(
+    'lastLogin',
+  );
+  @override
+  late final GeneratedColumn<DateTime> lastLogin = GeneratedColumn<DateTime>(
+    'last_login',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    uid,
+    displayName,
+    email,
+    photoUrl,
+    role,
+    firstSeen,
+    lastLogin,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'monitored_users';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<MonitoredUser> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('uid')) {
+      context.handle(
+        _uidMeta,
+        uid.isAcceptableOrUnknown(data['uid']!, _uidMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_uidMeta);
+    }
+    if (data.containsKey('display_name')) {
+      context.handle(
+        _displayNameMeta,
+        displayName.isAcceptableOrUnknown(
+          data['display_name']!,
+          _displayNameMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_displayNameMeta);
+    }
+    if (data.containsKey('email')) {
+      context.handle(
+        _emailMeta,
+        email.isAcceptableOrUnknown(data['email']!, _emailMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_emailMeta);
+    }
+    if (data.containsKey('photo_url')) {
+      context.handle(
+        _photoUrlMeta,
+        photoUrl.isAcceptableOrUnknown(data['photo_url']!, _photoUrlMeta),
+      );
+    }
+    if (data.containsKey('role')) {
+      context.handle(
+        _roleMeta,
+        role.isAcceptableOrUnknown(data['role']!, _roleMeta),
+      );
+    }
+    if (data.containsKey('first_seen')) {
+      context.handle(
+        _firstSeenMeta,
+        firstSeen.isAcceptableOrUnknown(data['first_seen']!, _firstSeenMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_firstSeenMeta);
+    }
+    if (data.containsKey('last_login')) {
+      context.handle(
+        _lastLoginMeta,
+        lastLogin.isAcceptableOrUnknown(data['last_login']!, _lastLoginMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_lastLoginMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {uid};
+  @override
+  MonitoredUser map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return MonitoredUser(
+      uid: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}uid'],
+      )!,
+      displayName: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}display_name'],
+      )!,
+      email: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}email'],
+      )!,
+      photoUrl: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}photo_url'],
+      ),
+      role: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}role'],
+      )!,
+      firstSeen: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}first_seen'],
+      )!,
+      lastLogin: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}last_login'],
+      )!,
+    );
+  }
+
+  @override
+  $MonitoredUsersTable createAlias(String alias) {
+    return $MonitoredUsersTable(attachedDatabase, alias);
+  }
+}
+
+class MonitoredUser extends DataClass implements Insertable<MonitoredUser> {
+  final String uid;
+  final String displayName;
+  final String email;
+  final String? photoUrl;
+  final String role;
+  final DateTime firstSeen;
+  final DateTime lastLogin;
+  const MonitoredUser({
+    required this.uid,
+    required this.displayName,
+    required this.email,
+    this.photoUrl,
+    required this.role,
+    required this.firstSeen,
+    required this.lastLogin,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['uid'] = Variable<String>(uid);
+    map['display_name'] = Variable<String>(displayName);
+    map['email'] = Variable<String>(email);
+    if (!nullToAbsent || photoUrl != null) {
+      map['photo_url'] = Variable<String>(photoUrl);
+    }
+    map['role'] = Variable<String>(role);
+    map['first_seen'] = Variable<DateTime>(firstSeen);
+    map['last_login'] = Variable<DateTime>(lastLogin);
+    return map;
+  }
+
+  MonitoredUsersCompanion toCompanion(bool nullToAbsent) {
+    return MonitoredUsersCompanion(
+      uid: Value(uid),
+      displayName: Value(displayName),
+      email: Value(email),
+      photoUrl: photoUrl == null && nullToAbsent
+          ? const Value.absent()
+          : Value(photoUrl),
+      role: Value(role),
+      firstSeen: Value(firstSeen),
+      lastLogin: Value(lastLogin),
+    );
+  }
+
+  factory MonitoredUser.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return MonitoredUser(
+      uid: serializer.fromJson<String>(json['uid']),
+      displayName: serializer.fromJson<String>(json['displayName']),
+      email: serializer.fromJson<String>(json['email']),
+      photoUrl: serializer.fromJson<String?>(json['photoUrl']),
+      role: serializer.fromJson<String>(json['role']),
+      firstSeen: serializer.fromJson<DateTime>(json['firstSeen']),
+      lastLogin: serializer.fromJson<DateTime>(json['lastLogin']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'uid': serializer.toJson<String>(uid),
+      'displayName': serializer.toJson<String>(displayName),
+      'email': serializer.toJson<String>(email),
+      'photoUrl': serializer.toJson<String?>(photoUrl),
+      'role': serializer.toJson<String>(role),
+      'firstSeen': serializer.toJson<DateTime>(firstSeen),
+      'lastLogin': serializer.toJson<DateTime>(lastLogin),
+    };
+  }
+
+  MonitoredUser copyWith({
+    String? uid,
+    String? displayName,
+    String? email,
+    Value<String?> photoUrl = const Value.absent(),
+    String? role,
+    DateTime? firstSeen,
+    DateTime? lastLogin,
+  }) => MonitoredUser(
+    uid: uid ?? this.uid,
+    displayName: displayName ?? this.displayName,
+    email: email ?? this.email,
+    photoUrl: photoUrl.present ? photoUrl.value : this.photoUrl,
+    role: role ?? this.role,
+    firstSeen: firstSeen ?? this.firstSeen,
+    lastLogin: lastLogin ?? this.lastLogin,
+  );
+  MonitoredUser copyWithCompanion(MonitoredUsersCompanion data) {
+    return MonitoredUser(
+      uid: data.uid.present ? data.uid.value : this.uid,
+      displayName: data.displayName.present
+          ? data.displayName.value
+          : this.displayName,
+      email: data.email.present ? data.email.value : this.email,
+      photoUrl: data.photoUrl.present ? data.photoUrl.value : this.photoUrl,
+      role: data.role.present ? data.role.value : this.role,
+      firstSeen: data.firstSeen.present ? data.firstSeen.value : this.firstSeen,
+      lastLogin: data.lastLogin.present ? data.lastLogin.value : this.lastLogin,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MonitoredUser(')
+          ..write('uid: $uid, ')
+          ..write('displayName: $displayName, ')
+          ..write('email: $email, ')
+          ..write('photoUrl: $photoUrl, ')
+          ..write('role: $role, ')
+          ..write('firstSeen: $firstSeen, ')
+          ..write('lastLogin: $lastLogin')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    uid,
+    displayName,
+    email,
+    photoUrl,
+    role,
+    firstSeen,
+    lastLogin,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is MonitoredUser &&
+          other.uid == this.uid &&
+          other.displayName == this.displayName &&
+          other.email == this.email &&
+          other.photoUrl == this.photoUrl &&
+          other.role == this.role &&
+          other.firstSeen == this.firstSeen &&
+          other.lastLogin == this.lastLogin);
+}
+
+class MonitoredUsersCompanion extends UpdateCompanion<MonitoredUser> {
+  final Value<String> uid;
+  final Value<String> displayName;
+  final Value<String> email;
+  final Value<String?> photoUrl;
+  final Value<String> role;
+  final Value<DateTime> firstSeen;
+  final Value<DateTime> lastLogin;
+  final Value<int> rowid;
+  const MonitoredUsersCompanion({
+    this.uid = const Value.absent(),
+    this.displayName = const Value.absent(),
+    this.email = const Value.absent(),
+    this.photoUrl = const Value.absent(),
+    this.role = const Value.absent(),
+    this.firstSeen = const Value.absent(),
+    this.lastLogin = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  MonitoredUsersCompanion.insert({
+    required String uid,
+    required String displayName,
+    required String email,
+    this.photoUrl = const Value.absent(),
+    this.role = const Value.absent(),
+    required DateTime firstSeen,
+    required DateTime lastLogin,
+    this.rowid = const Value.absent(),
+  }) : uid = Value(uid),
+       displayName = Value(displayName),
+       email = Value(email),
+       firstSeen = Value(firstSeen),
+       lastLogin = Value(lastLogin);
+  static Insertable<MonitoredUser> custom({
+    Expression<String>? uid,
+    Expression<String>? displayName,
+    Expression<String>? email,
+    Expression<String>? photoUrl,
+    Expression<String>? role,
+    Expression<DateTime>? firstSeen,
+    Expression<DateTime>? lastLogin,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (uid != null) 'uid': uid,
+      if (displayName != null) 'display_name': displayName,
+      if (email != null) 'email': email,
+      if (photoUrl != null) 'photo_url': photoUrl,
+      if (role != null) 'role': role,
+      if (firstSeen != null) 'first_seen': firstSeen,
+      if (lastLogin != null) 'last_login': lastLogin,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  MonitoredUsersCompanion copyWith({
+    Value<String>? uid,
+    Value<String>? displayName,
+    Value<String>? email,
+    Value<String?>? photoUrl,
+    Value<String>? role,
+    Value<DateTime>? firstSeen,
+    Value<DateTime>? lastLogin,
+    Value<int>? rowid,
+  }) {
+    return MonitoredUsersCompanion(
+      uid: uid ?? this.uid,
+      displayName: displayName ?? this.displayName,
+      email: email ?? this.email,
+      photoUrl: photoUrl ?? this.photoUrl,
+      role: role ?? this.role,
+      firstSeen: firstSeen ?? this.firstSeen,
+      lastLogin: lastLogin ?? this.lastLogin,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (uid.present) {
+      map['uid'] = Variable<String>(uid.value);
+    }
+    if (displayName.present) {
+      map['display_name'] = Variable<String>(displayName.value);
+    }
+    if (email.present) {
+      map['email'] = Variable<String>(email.value);
+    }
+    if (photoUrl.present) {
+      map['photo_url'] = Variable<String>(photoUrl.value);
+    }
+    if (role.present) {
+      map['role'] = Variable<String>(role.value);
+    }
+    if (firstSeen.present) {
+      map['first_seen'] = Variable<DateTime>(firstSeen.value);
+    }
+    if (lastLogin.present) {
+      map['last_login'] = Variable<DateTime>(lastLogin.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MonitoredUsersCompanion(')
+          ..write('uid: $uid, ')
+          ..write('displayName: $displayName, ')
+          ..write('email: $email, ')
+          ..write('photoUrl: $photoUrl, ')
+          ..write('role: $role, ')
+          ..write('firstSeen: $firstSeen, ')
+          ..write('lastLogin: $lastLogin, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 class $VoiceSessionsTable extends VoiceSessions
     with TableInfo<$VoiceSessionsTable, VoiceSession> {
   @override
@@ -17,6 +484,18 @@ class $VoiceSessionsTable extends VoiceSessions
     false,
     type: DriftSqlType.string,
     requiredDuringInsert: true,
+  );
+  static const VerificationMeta _userEmailMeta = const VerificationMeta(
+    'userEmail',
+  );
+  @override
+  late final GeneratedColumn<String> userEmail = GeneratedColumn<String>(
+    'user_email',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('unknown'),
   );
   static const VerificationMeta _startTimeMeta = const VerificationMeta(
     'startTime',
@@ -101,6 +580,7 @@ class $VoiceSessionsTable extends VoiceSessions
   @override
   List<GeneratedColumn> get $columns => [
     id,
+    userEmail,
     startTime,
     endTime,
     status,
@@ -125,6 +605,12 @@ class $VoiceSessionsTable extends VoiceSessions
       context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
     } else if (isInserting) {
       context.missing(_idMeta);
+    }
+    if (data.containsKey('user_email')) {
+      context.handle(
+        _userEmailMeta,
+        userEmail.isAcceptableOrUnknown(data['user_email']!, _userEmailMeta),
+      );
     }
     if (data.containsKey('start_time')) {
       context.handle(
@@ -189,6 +675,10 @@ class $VoiceSessionsTable extends VoiceSessions
         DriftSqlType.string,
         data['${effectivePrefix}id'],
       )!,
+      userEmail: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}user_email'],
+      )!,
       startTime: attachedDatabase.typeMapping.read(
         DriftSqlType.dateTime,
         data['${effectivePrefix}start_time'],
@@ -228,6 +718,7 @@ class $VoiceSessionsTable extends VoiceSessions
 
 class VoiceSession extends DataClass implements Insertable<VoiceSession> {
   final String id;
+  final String userEmail;
   final DateTime startTime;
   final DateTime? endTime;
   final String status;
@@ -237,6 +728,7 @@ class VoiceSession extends DataClass implements Insertable<VoiceSession> {
   final int totalDurationMs;
   const VoiceSession({
     required this.id,
+    required this.userEmail,
     required this.startTime,
     this.endTime,
     required this.status,
@@ -249,6 +741,7 @@ class VoiceSession extends DataClass implements Insertable<VoiceSession> {
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
     map['id'] = Variable<String>(id);
+    map['user_email'] = Variable<String>(userEmail);
     map['start_time'] = Variable<DateTime>(startTime);
     if (!nullToAbsent || endTime != null) {
       map['end_time'] = Variable<DateTime>(endTime);
@@ -264,6 +757,7 @@ class VoiceSession extends DataClass implements Insertable<VoiceSession> {
   VoiceSessionsCompanion toCompanion(bool nullToAbsent) {
     return VoiceSessionsCompanion(
       id: Value(id),
+      userEmail: Value(userEmail),
       startTime: Value(startTime),
       endTime: endTime == null && nullToAbsent
           ? const Value.absent()
@@ -283,6 +777,7 @@ class VoiceSession extends DataClass implements Insertable<VoiceSession> {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return VoiceSession(
       id: serializer.fromJson<String>(json['id']),
+      userEmail: serializer.fromJson<String>(json['userEmail']),
       startTime: serializer.fromJson<DateTime>(json['startTime']),
       endTime: serializer.fromJson<DateTime?>(json['endTime']),
       status: serializer.fromJson<String>(json['status']),
@@ -297,6 +792,7 @@ class VoiceSession extends DataClass implements Insertable<VoiceSession> {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return <String, dynamic>{
       'id': serializer.toJson<String>(id),
+      'userEmail': serializer.toJson<String>(userEmail),
       'startTime': serializer.toJson<DateTime>(startTime),
       'endTime': serializer.toJson<DateTime?>(endTime),
       'status': serializer.toJson<String>(status),
@@ -309,6 +805,7 @@ class VoiceSession extends DataClass implements Insertable<VoiceSession> {
 
   VoiceSession copyWith({
     String? id,
+    String? userEmail,
     DateTime? startTime,
     Value<DateTime?> endTime = const Value.absent(),
     String? status,
@@ -318,6 +815,7 @@ class VoiceSession extends DataClass implements Insertable<VoiceSession> {
     int? totalDurationMs,
   }) => VoiceSession(
     id: id ?? this.id,
+    userEmail: userEmail ?? this.userEmail,
     startTime: startTime ?? this.startTime,
     endTime: endTime.present ? endTime.value : this.endTime,
     status: status ?? this.status,
@@ -329,6 +827,7 @@ class VoiceSession extends DataClass implements Insertable<VoiceSession> {
   VoiceSession copyWithCompanion(VoiceSessionsCompanion data) {
     return VoiceSession(
       id: data.id.present ? data.id.value : this.id,
+      userEmail: data.userEmail.present ? data.userEmail.value : this.userEmail,
       startTime: data.startTime.present ? data.startTime.value : this.startTime,
       endTime: data.endTime.present ? data.endTime.value : this.endTime,
       status: data.status.present ? data.status.value : this.status,
@@ -349,6 +848,7 @@ class VoiceSession extends DataClass implements Insertable<VoiceSession> {
   String toString() {
     return (StringBuffer('VoiceSession(')
           ..write('id: $id, ')
+          ..write('userEmail: $userEmail, ')
           ..write('startTime: $startTime, ')
           ..write('endTime: $endTime, ')
           ..write('status: $status, ')
@@ -363,6 +863,7 @@ class VoiceSession extends DataClass implements Insertable<VoiceSession> {
   @override
   int get hashCode => Object.hash(
     id,
+    userEmail,
     startTime,
     endTime,
     status,
@@ -376,6 +877,7 @@ class VoiceSession extends DataClass implements Insertable<VoiceSession> {
       identical(this, other) ||
       (other is VoiceSession &&
           other.id == this.id &&
+          other.userEmail == this.userEmail &&
           other.startTime == this.startTime &&
           other.endTime == this.endTime &&
           other.status == this.status &&
@@ -387,6 +889,7 @@ class VoiceSession extends DataClass implements Insertable<VoiceSession> {
 
 class VoiceSessionsCompanion extends UpdateCompanion<VoiceSession> {
   final Value<String> id;
+  final Value<String> userEmail;
   final Value<DateTime> startTime;
   final Value<DateTime?> endTime;
   final Value<String> status;
@@ -397,6 +900,7 @@ class VoiceSessionsCompanion extends UpdateCompanion<VoiceSession> {
   final Value<int> rowid;
   const VoiceSessionsCompanion({
     this.id = const Value.absent(),
+    this.userEmail = const Value.absent(),
     this.startTime = const Value.absent(),
     this.endTime = const Value.absent(),
     this.status = const Value.absent(),
@@ -408,6 +912,7 @@ class VoiceSessionsCompanion extends UpdateCompanion<VoiceSession> {
   });
   VoiceSessionsCompanion.insert({
     required String id,
+    this.userEmail = const Value.absent(),
     required DateTime startTime,
     this.endTime = const Value.absent(),
     this.status = const Value.absent(),
@@ -420,6 +925,7 @@ class VoiceSessionsCompanion extends UpdateCompanion<VoiceSession> {
        startTime = Value(startTime);
   static Insertable<VoiceSession> custom({
     Expression<String>? id,
+    Expression<String>? userEmail,
     Expression<DateTime>? startTime,
     Expression<DateTime>? endTime,
     Expression<String>? status,
@@ -431,6 +937,7 @@ class VoiceSessionsCompanion extends UpdateCompanion<VoiceSession> {
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
+      if (userEmail != null) 'user_email': userEmail,
       if (startTime != null) 'start_time': startTime,
       if (endTime != null) 'end_time': endTime,
       if (status != null) 'status': status,
@@ -444,6 +951,7 @@ class VoiceSessionsCompanion extends UpdateCompanion<VoiceSession> {
 
   VoiceSessionsCompanion copyWith({
     Value<String>? id,
+    Value<String>? userEmail,
     Value<DateTime>? startTime,
     Value<DateTime?>? endTime,
     Value<String>? status,
@@ -455,6 +963,7 @@ class VoiceSessionsCompanion extends UpdateCompanion<VoiceSession> {
   }) {
     return VoiceSessionsCompanion(
       id: id ?? this.id,
+      userEmail: userEmail ?? this.userEmail,
       startTime: startTime ?? this.startTime,
       endTime: endTime ?? this.endTime,
       status: status ?? this.status,
@@ -471,6 +980,9 @@ class VoiceSessionsCompanion extends UpdateCompanion<VoiceSession> {
     final map = <String, Expression>{};
     if (id.present) {
       map['id'] = Variable<String>(id.value);
+    }
+    if (userEmail.present) {
+      map['user_email'] = Variable<String>(userEmail.value);
     }
     if (startTime.present) {
       map['start_time'] = Variable<DateTime>(startTime.value);
@@ -503,6 +1015,7 @@ class VoiceSessionsCompanion extends UpdateCompanion<VoiceSession> {
   String toString() {
     return (StringBuffer('VoiceSessionsCompanion(')
           ..write('id: $id, ')
+          ..write('userEmail: $userEmail, ')
           ..write('startTime: $startTime, ')
           ..write('endTime: $endTime, ')
           ..write('status: $status, ')
@@ -555,6 +1068,17 @@ class $VoiceChunksTable extends VoiceChunks
     false,
     type: DriftSqlType.string,
     requiredDuringInsert: true,
+  );
+  static const VerificationMeta _audioDataMeta = const VerificationMeta(
+    'audioData',
+  );
+  @override
+  late final GeneratedColumn<Uint8List> audioData = GeneratedColumn<Uint8List>(
+    'audio_data',
+    aliasedName,
+    true,
+    type: DriftSqlType.blob,
+    requiredDuringInsert: false,
   );
   static const VerificationMeta _durationMsMeta = const VerificationMeta(
     'durationMs',
@@ -629,6 +1153,7 @@ class $VoiceChunksTable extends VoiceChunks
     id,
     sessionId,
     filePath,
+    audioData,
     durationMs,
     timestamp,
     volumeDb,
@@ -668,6 +1193,12 @@ class $VoiceChunksTable extends VoiceChunks
       );
     } else if (isInserting) {
       context.missing(_filePathMeta);
+    }
+    if (data.containsKey('audio_data')) {
+      context.handle(
+        _audioDataMeta,
+        audioData.isAcceptableOrUnknown(data['audio_data']!, _audioDataMeta),
+      );
     }
     if (data.containsKey('duration_ms')) {
       context.handle(
@@ -735,6 +1266,10 @@ class $VoiceChunksTable extends VoiceChunks
         DriftSqlType.string,
         data['${effectivePrefix}file_path'],
       )!,
+      audioData: attachedDatabase.typeMapping.read(
+        DriftSqlType.blob,
+        data['${effectivePrefix}audio_data'],
+      ),
       durationMs: attachedDatabase.typeMapping.read(
         DriftSqlType.int,
         data['${effectivePrefix}duration_ms'],
@@ -772,6 +1307,7 @@ class VoiceChunk extends DataClass implements Insertable<VoiceChunk> {
   final String id;
   final String sessionId;
   final String filePath;
+  final Uint8List? audioData;
   final int durationMs;
   final DateTime timestamp;
   final double volumeDb;
@@ -782,6 +1318,7 @@ class VoiceChunk extends DataClass implements Insertable<VoiceChunk> {
     required this.id,
     required this.sessionId,
     required this.filePath,
+    this.audioData,
     required this.durationMs,
     required this.timestamp,
     required this.volumeDb,
@@ -795,6 +1332,9 @@ class VoiceChunk extends DataClass implements Insertable<VoiceChunk> {
     map['id'] = Variable<String>(id);
     map['session_id'] = Variable<String>(sessionId);
     map['file_path'] = Variable<String>(filePath);
+    if (!nullToAbsent || audioData != null) {
+      map['audio_data'] = Variable<Uint8List>(audioData);
+    }
     map['duration_ms'] = Variable<int>(durationMs);
     map['timestamp'] = Variable<DateTime>(timestamp);
     map['volume_db'] = Variable<double>(volumeDb);
@@ -811,6 +1351,9 @@ class VoiceChunk extends DataClass implements Insertable<VoiceChunk> {
       id: Value(id),
       sessionId: Value(sessionId),
       filePath: Value(filePath),
+      audioData: audioData == null && nullToAbsent
+          ? const Value.absent()
+          : Value(audioData),
       durationMs: Value(durationMs),
       timestamp: Value(timestamp),
       volumeDb: Value(volumeDb),
@@ -831,6 +1374,7 @@ class VoiceChunk extends DataClass implements Insertable<VoiceChunk> {
       id: serializer.fromJson<String>(json['id']),
       sessionId: serializer.fromJson<String>(json['sessionId']),
       filePath: serializer.fromJson<String>(json['filePath']),
+      audioData: serializer.fromJson<Uint8List?>(json['audioData']),
       durationMs: serializer.fromJson<int>(json['durationMs']),
       timestamp: serializer.fromJson<DateTime>(json['timestamp']),
       volumeDb: serializer.fromJson<double>(json['volumeDb']),
@@ -846,6 +1390,7 @@ class VoiceChunk extends DataClass implements Insertable<VoiceChunk> {
       'id': serializer.toJson<String>(id),
       'sessionId': serializer.toJson<String>(sessionId),
       'filePath': serializer.toJson<String>(filePath),
+      'audioData': serializer.toJson<Uint8List?>(audioData),
       'durationMs': serializer.toJson<int>(durationMs),
       'timestamp': serializer.toJson<DateTime>(timestamp),
       'volumeDb': serializer.toJson<double>(volumeDb),
@@ -859,6 +1404,7 @@ class VoiceChunk extends DataClass implements Insertable<VoiceChunk> {
     String? id,
     String? sessionId,
     String? filePath,
+    Value<Uint8List?> audioData = const Value.absent(),
     int? durationMs,
     DateTime? timestamp,
     double? volumeDb,
@@ -869,6 +1415,7 @@ class VoiceChunk extends DataClass implements Insertable<VoiceChunk> {
     id: id ?? this.id,
     sessionId: sessionId ?? this.sessionId,
     filePath: filePath ?? this.filePath,
+    audioData: audioData.present ? audioData.value : this.audioData,
     durationMs: durationMs ?? this.durationMs,
     timestamp: timestamp ?? this.timestamp,
     volumeDb: volumeDb ?? this.volumeDb,
@@ -881,6 +1428,7 @@ class VoiceChunk extends DataClass implements Insertable<VoiceChunk> {
       id: data.id.present ? data.id.value : this.id,
       sessionId: data.sessionId.present ? data.sessionId.value : this.sessionId,
       filePath: data.filePath.present ? data.filePath.value : this.filePath,
+      audioData: data.audioData.present ? data.audioData.value : this.audioData,
       durationMs: data.durationMs.present
           ? data.durationMs.value
           : this.durationMs,
@@ -902,6 +1450,7 @@ class VoiceChunk extends DataClass implements Insertable<VoiceChunk> {
           ..write('id: $id, ')
           ..write('sessionId: $sessionId, ')
           ..write('filePath: $filePath, ')
+          ..write('audioData: $audioData, ')
           ..write('durationMs: $durationMs, ')
           ..write('timestamp: $timestamp, ')
           ..write('volumeDb: $volumeDb, ')
@@ -917,6 +1466,7 @@ class VoiceChunk extends DataClass implements Insertable<VoiceChunk> {
     id,
     sessionId,
     filePath,
+    $driftBlobEquality.hash(audioData),
     durationMs,
     timestamp,
     volumeDb,
@@ -931,6 +1481,7 @@ class VoiceChunk extends DataClass implements Insertable<VoiceChunk> {
           other.id == this.id &&
           other.sessionId == this.sessionId &&
           other.filePath == this.filePath &&
+          $driftBlobEquality.equals(other.audioData, this.audioData) &&
           other.durationMs == this.durationMs &&
           other.timestamp == this.timestamp &&
           other.volumeDb == this.volumeDb &&
@@ -943,6 +1494,7 @@ class VoiceChunksCompanion extends UpdateCompanion<VoiceChunk> {
   final Value<String> id;
   final Value<String> sessionId;
   final Value<String> filePath;
+  final Value<Uint8List?> audioData;
   final Value<int> durationMs;
   final Value<DateTime> timestamp;
   final Value<double> volumeDb;
@@ -954,6 +1506,7 @@ class VoiceChunksCompanion extends UpdateCompanion<VoiceChunk> {
     this.id = const Value.absent(),
     this.sessionId = const Value.absent(),
     this.filePath = const Value.absent(),
+    this.audioData = const Value.absent(),
     this.durationMs = const Value.absent(),
     this.timestamp = const Value.absent(),
     this.volumeDb = const Value.absent(),
@@ -966,6 +1519,7 @@ class VoiceChunksCompanion extends UpdateCompanion<VoiceChunk> {
     required String id,
     required String sessionId,
     required String filePath,
+    this.audioData = const Value.absent(),
     required int durationMs,
     required DateTime timestamp,
     required double volumeDb,
@@ -983,6 +1537,7 @@ class VoiceChunksCompanion extends UpdateCompanion<VoiceChunk> {
     Expression<String>? id,
     Expression<String>? sessionId,
     Expression<String>? filePath,
+    Expression<Uint8List>? audioData,
     Expression<int>? durationMs,
     Expression<DateTime>? timestamp,
     Expression<double>? volumeDb,
@@ -995,6 +1550,7 @@ class VoiceChunksCompanion extends UpdateCompanion<VoiceChunk> {
       if (id != null) 'id': id,
       if (sessionId != null) 'session_id': sessionId,
       if (filePath != null) 'file_path': filePath,
+      if (audioData != null) 'audio_data': audioData,
       if (durationMs != null) 'duration_ms': durationMs,
       if (timestamp != null) 'timestamp': timestamp,
       if (volumeDb != null) 'volume_db': volumeDb,
@@ -1009,6 +1565,7 @@ class VoiceChunksCompanion extends UpdateCompanion<VoiceChunk> {
     Value<String>? id,
     Value<String>? sessionId,
     Value<String>? filePath,
+    Value<Uint8List?>? audioData,
     Value<int>? durationMs,
     Value<DateTime>? timestamp,
     Value<double>? volumeDb,
@@ -1021,6 +1578,7 @@ class VoiceChunksCompanion extends UpdateCompanion<VoiceChunk> {
       id: id ?? this.id,
       sessionId: sessionId ?? this.sessionId,
       filePath: filePath ?? this.filePath,
+      audioData: audioData ?? this.audioData,
       durationMs: durationMs ?? this.durationMs,
       timestamp: timestamp ?? this.timestamp,
       volumeDb: volumeDb ?? this.volumeDb,
@@ -1042,6 +1600,9 @@ class VoiceChunksCompanion extends UpdateCompanion<VoiceChunk> {
     }
     if (filePath.present) {
       map['file_path'] = Variable<String>(filePath.value);
+    }
+    if (audioData.present) {
+      map['audio_data'] = Variable<Uint8List>(audioData.value);
     }
     if (durationMs.present) {
       map['duration_ms'] = Variable<int>(durationMs.value);
@@ -1073,6 +1634,7 @@ class VoiceChunksCompanion extends UpdateCompanion<VoiceChunk> {
           ..write('id: $id, ')
           ..write('sessionId: $sessionId, ')
           ..write('filePath: $filePath, ')
+          ..write('audioData: $audioData, ')
           ..write('durationMs: $durationMs, ')
           ..write('timestamp: $timestamp, ')
           ..write('volumeDb: $volumeDb, ')
@@ -1664,6 +2226,7 @@ class VoiceAlertsCompanion extends UpdateCompanion<VoiceAlert> {
 abstract class _$VoiceDatabase extends GeneratedDatabase {
   _$VoiceDatabase(QueryExecutor e) : super(e);
   $VoiceDatabaseManager get managers => $VoiceDatabaseManager(this);
+  late final $MonitoredUsersTable monitoredUsers = $MonitoredUsersTable(this);
   late final $VoiceSessionsTable voiceSessions = $VoiceSessionsTable(this);
   late final $VoiceChunksTable voiceChunks = $VoiceChunksTable(this);
   late final $VoiceAlertsTable voiceAlerts = $VoiceAlertsTable(this);
@@ -1672,15 +2235,263 @@ abstract class _$VoiceDatabase extends GeneratedDatabase {
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
   @override
   List<DatabaseSchemaEntity> get allSchemaEntities => [
+    monitoredUsers,
     voiceSessions,
     voiceChunks,
     voiceAlerts,
   ];
 }
 
+typedef $$MonitoredUsersTableCreateCompanionBuilder =
+    MonitoredUsersCompanion Function({
+      required String uid,
+      required String displayName,
+      required String email,
+      Value<String?> photoUrl,
+      Value<String> role,
+      required DateTime firstSeen,
+      required DateTime lastLogin,
+      Value<int> rowid,
+    });
+typedef $$MonitoredUsersTableUpdateCompanionBuilder =
+    MonitoredUsersCompanion Function({
+      Value<String> uid,
+      Value<String> displayName,
+      Value<String> email,
+      Value<String?> photoUrl,
+      Value<String> role,
+      Value<DateTime> firstSeen,
+      Value<DateTime> lastLogin,
+      Value<int> rowid,
+    });
+
+class $$MonitoredUsersTableFilterComposer
+    extends Composer<_$VoiceDatabase, $MonitoredUsersTable> {
+  $$MonitoredUsersTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get uid => $composableBuilder(
+    column: $table.uid,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get displayName => $composableBuilder(
+    column: $table.displayName,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get email => $composableBuilder(
+    column: $table.email,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get photoUrl => $composableBuilder(
+    column: $table.photoUrl,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get role => $composableBuilder(
+    column: $table.role,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get firstSeen => $composableBuilder(
+    column: $table.firstSeen,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get lastLogin => $composableBuilder(
+    column: $table.lastLogin,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$MonitoredUsersTableOrderingComposer
+    extends Composer<_$VoiceDatabase, $MonitoredUsersTable> {
+  $$MonitoredUsersTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get uid => $composableBuilder(
+    column: $table.uid,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get displayName => $composableBuilder(
+    column: $table.displayName,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get email => $composableBuilder(
+    column: $table.email,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get photoUrl => $composableBuilder(
+    column: $table.photoUrl,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get role => $composableBuilder(
+    column: $table.role,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get firstSeen => $composableBuilder(
+    column: $table.firstSeen,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get lastLogin => $composableBuilder(
+    column: $table.lastLogin,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$MonitoredUsersTableAnnotationComposer
+    extends Composer<_$VoiceDatabase, $MonitoredUsersTable> {
+  $$MonitoredUsersTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get uid =>
+      $composableBuilder(column: $table.uid, builder: (column) => column);
+
+  GeneratedColumn<String> get displayName => $composableBuilder(
+    column: $table.displayName,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get email =>
+      $composableBuilder(column: $table.email, builder: (column) => column);
+
+  GeneratedColumn<String> get photoUrl =>
+      $composableBuilder(column: $table.photoUrl, builder: (column) => column);
+
+  GeneratedColumn<String> get role =>
+      $composableBuilder(column: $table.role, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get firstSeen =>
+      $composableBuilder(column: $table.firstSeen, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get lastLogin =>
+      $composableBuilder(column: $table.lastLogin, builder: (column) => column);
+}
+
+class $$MonitoredUsersTableTableManager
+    extends
+        RootTableManager<
+          _$VoiceDatabase,
+          $MonitoredUsersTable,
+          MonitoredUser,
+          $$MonitoredUsersTableFilterComposer,
+          $$MonitoredUsersTableOrderingComposer,
+          $$MonitoredUsersTableAnnotationComposer,
+          $$MonitoredUsersTableCreateCompanionBuilder,
+          $$MonitoredUsersTableUpdateCompanionBuilder,
+          (
+            MonitoredUser,
+            BaseReferences<
+              _$VoiceDatabase,
+              $MonitoredUsersTable,
+              MonitoredUser
+            >,
+          ),
+          MonitoredUser,
+          PrefetchHooks Function()
+        > {
+  $$MonitoredUsersTableTableManager(
+    _$VoiceDatabase db,
+    $MonitoredUsersTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$MonitoredUsersTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$MonitoredUsersTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$MonitoredUsersTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> uid = const Value.absent(),
+                Value<String> displayName = const Value.absent(),
+                Value<String> email = const Value.absent(),
+                Value<String?> photoUrl = const Value.absent(),
+                Value<String> role = const Value.absent(),
+                Value<DateTime> firstSeen = const Value.absent(),
+                Value<DateTime> lastLogin = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => MonitoredUsersCompanion(
+                uid: uid,
+                displayName: displayName,
+                email: email,
+                photoUrl: photoUrl,
+                role: role,
+                firstSeen: firstSeen,
+                lastLogin: lastLogin,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String uid,
+                required String displayName,
+                required String email,
+                Value<String?> photoUrl = const Value.absent(),
+                Value<String> role = const Value.absent(),
+                required DateTime firstSeen,
+                required DateTime lastLogin,
+                Value<int> rowid = const Value.absent(),
+              }) => MonitoredUsersCompanion.insert(
+                uid: uid,
+                displayName: displayName,
+                email: email,
+                photoUrl: photoUrl,
+                role: role,
+                firstSeen: firstSeen,
+                lastLogin: lastLogin,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$MonitoredUsersTableProcessedTableManager =
+    ProcessedTableManager<
+      _$VoiceDatabase,
+      $MonitoredUsersTable,
+      MonitoredUser,
+      $$MonitoredUsersTableFilterComposer,
+      $$MonitoredUsersTableOrderingComposer,
+      $$MonitoredUsersTableAnnotationComposer,
+      $$MonitoredUsersTableCreateCompanionBuilder,
+      $$MonitoredUsersTableUpdateCompanionBuilder,
+      (
+        MonitoredUser,
+        BaseReferences<_$VoiceDatabase, $MonitoredUsersTable, MonitoredUser>,
+      ),
+      MonitoredUser,
+      PrefetchHooks Function()
+    >;
 typedef $$VoiceSessionsTableCreateCompanionBuilder =
     VoiceSessionsCompanion Function({
       required String id,
+      Value<String> userEmail,
       required DateTime startTime,
       Value<DateTime?> endTime,
       Value<String> status,
@@ -1693,6 +2504,7 @@ typedef $$VoiceSessionsTableCreateCompanionBuilder =
 typedef $$VoiceSessionsTableUpdateCompanionBuilder =
     VoiceSessionsCompanion Function({
       Value<String> id,
+      Value<String> userEmail,
       Value<DateTime> startTime,
       Value<DateTime?> endTime,
       Value<String> status,
@@ -1765,6 +2577,11 @@ class $$VoiceSessionsTableFilterComposer
   });
   ColumnFilters<String> get id => $composableBuilder(
     column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get userEmail => $composableBuilder(
+    column: $table.userEmail,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -1868,6 +2685,11 @@ class $$VoiceSessionsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get userEmail => $composableBuilder(
+    column: $table.userEmail,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<DateTime> get startTime => $composableBuilder(
     column: $table.startTime,
     builder: (column) => ColumnOrderings(column),
@@ -1915,6 +2737,9 @@ class $$VoiceSessionsTableAnnotationComposer
   });
   GeneratedColumn<String> get id =>
       $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get userEmail =>
+      $composableBuilder(column: $table.userEmail, builder: (column) => column);
 
   GeneratedColumn<DateTime> get startTime =>
       $composableBuilder(column: $table.startTime, builder: (column) => column);
@@ -2025,6 +2850,7 @@ class $$VoiceSessionsTableTableManager
           updateCompanionCallback:
               ({
                 Value<String> id = const Value.absent(),
+                Value<String> userEmail = const Value.absent(),
                 Value<DateTime> startTime = const Value.absent(),
                 Value<DateTime?> endTime = const Value.absent(),
                 Value<String> status = const Value.absent(),
@@ -2035,6 +2861,7 @@ class $$VoiceSessionsTableTableManager
                 Value<int> rowid = const Value.absent(),
               }) => VoiceSessionsCompanion(
                 id: id,
+                userEmail: userEmail,
                 startTime: startTime,
                 endTime: endTime,
                 status: status,
@@ -2047,6 +2874,7 @@ class $$VoiceSessionsTableTableManager
           createCompanionCallback:
               ({
                 required String id,
+                Value<String> userEmail = const Value.absent(),
                 required DateTime startTime,
                 Value<DateTime?> endTime = const Value.absent(),
                 Value<String> status = const Value.absent(),
@@ -2057,6 +2885,7 @@ class $$VoiceSessionsTableTableManager
                 Value<int> rowid = const Value.absent(),
               }) => VoiceSessionsCompanion.insert(
                 id: id,
+                userEmail: userEmail,
                 startTime: startTime,
                 endTime: endTime,
                 status: status,
@@ -2154,6 +2983,7 @@ typedef $$VoiceChunksTableCreateCompanionBuilder =
       required String id,
       required String sessionId,
       required String filePath,
+      Value<Uint8List?> audioData,
       required int durationMs,
       required DateTime timestamp,
       required double volumeDb,
@@ -2167,6 +2997,7 @@ typedef $$VoiceChunksTableUpdateCompanionBuilder =
       Value<String> id,
       Value<String> sessionId,
       Value<String> filePath,
+      Value<Uint8List?> audioData,
       Value<int> durationMs,
       Value<DateTime> timestamp,
       Value<double> volumeDb,
@@ -2234,6 +3065,11 @@ class $$VoiceChunksTableFilterComposer
 
   ColumnFilters<String> get filePath => $composableBuilder(
     column: $table.filePath,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<Uint8List> get audioData => $composableBuilder(
+    column: $table.audioData,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -2335,6 +3171,11 @@ class $$VoiceChunksTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<Uint8List> get audioData => $composableBuilder(
+    column: $table.audioData,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<int> get durationMs => $composableBuilder(
     column: $table.durationMs,
     builder: (column) => ColumnOrderings(column),
@@ -2403,6 +3244,9 @@ class $$VoiceChunksTableAnnotationComposer
 
   GeneratedColumn<String> get filePath =>
       $composableBuilder(column: $table.filePath, builder: (column) => column);
+
+  GeneratedColumn<Uint8List> get audioData =>
+      $composableBuilder(column: $table.audioData, builder: (column) => column);
 
   GeneratedColumn<int> get durationMs => $composableBuilder(
     column: $table.durationMs,
@@ -2508,6 +3352,7 @@ class $$VoiceChunksTableTableManager
                 Value<String> id = const Value.absent(),
                 Value<String> sessionId = const Value.absent(),
                 Value<String> filePath = const Value.absent(),
+                Value<Uint8List?> audioData = const Value.absent(),
                 Value<int> durationMs = const Value.absent(),
                 Value<DateTime> timestamp = const Value.absent(),
                 Value<double> volumeDb = const Value.absent(),
@@ -2519,6 +3364,7 @@ class $$VoiceChunksTableTableManager
                 id: id,
                 sessionId: sessionId,
                 filePath: filePath,
+                audioData: audioData,
                 durationMs: durationMs,
                 timestamp: timestamp,
                 volumeDb: volumeDb,
@@ -2532,6 +3378,7 @@ class $$VoiceChunksTableTableManager
                 required String id,
                 required String sessionId,
                 required String filePath,
+                Value<Uint8List?> audioData = const Value.absent(),
                 required int durationMs,
                 required DateTime timestamp,
                 required double volumeDb,
@@ -2543,6 +3390,7 @@ class $$VoiceChunksTableTableManager
                 id: id,
                 sessionId: sessionId,
                 filePath: filePath,
+                audioData: audioData,
                 durationMs: durationMs,
                 timestamp: timestamp,
                 volumeDb: volumeDb,
@@ -3136,6 +3984,8 @@ typedef $$VoiceAlertsTableProcessedTableManager =
 class $VoiceDatabaseManager {
   final _$VoiceDatabase _db;
   $VoiceDatabaseManager(this._db);
+  $$MonitoredUsersTableTableManager get monitoredUsers =>
+      $$MonitoredUsersTableTableManager(_db, _db.monitoredUsers);
   $$VoiceSessionsTableTableManager get voiceSessions =>
       $$VoiceSessionsTableTableManager(_db, _db.voiceSessions);
   $$VoiceChunksTableTableManager get voiceChunks =>

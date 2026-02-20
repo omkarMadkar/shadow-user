@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:drift/drift.dart' show Value;
 import 'package:flutter/foundation.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -7,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../firebase_options.dart';
 import '../models/user_profile.dart';
 import '../services/google_oauth_desktop.dart';
+import '../database/voice_database.dart';
 
 /// Manages authentication state for Shadow Sentinel.
 ///
@@ -29,11 +31,20 @@ class AuthProvider extends ChangeNotifier {
   bool get isAuthenticated => _user != null;
   bool get isDemoMode => _user?.isDemo ?? false;
 
+  /// Whether the current session is an admin oversight login.
+  bool _isAdminLogin = false;
+  bool get isAdminLogin => _isAdminLogin;
+
+  /// The email of the user being monitored (viewed by admin).
+  String? _monitoredUserEmail;
+  String? get monitoredUserEmail => _monitoredUserEmail;
+
   String? _error;
   String? get error => _error;
 
   // ── Internals ────────────────────────────────────────────
   StreamSubscription<User?>? _authSub;
+  final VoiceDatabase _db = VoiceDatabase();
 
   // ────────────────────────────────────────────────────────
   // Initialisation
@@ -80,6 +91,48 @@ class AuthProvider extends ChangeNotifier {
   // Sign-In Methods
   // ────────────────────────────────────────────────────────
 
+  // ── Admin Credentials (hardcoded oversight account) ──────
+  static const String _adminUsername = 'Theojod77';
+  static const String _adminPassword = 'asyouwish';
+
+  /// Sign in as the admin oversight account.
+  /// Admin can view all flagged/malicious data for any monitored user.
+  Future<bool> signInAsAdmin(
+    String username,
+    String password, {
+    String? monitoredEmail,
+  }) async {
+    _isLoading = true;
+    _error = null;
+    notifyListeners();
+
+    await Future.delayed(const Duration(milliseconds: 600));
+
+    if (username == _adminUsername && password == _adminPassword) {
+      _isAdminLogin = true;
+      _monitoredUserEmail = monitoredEmail;
+
+      _user = UserProfile(
+        uid: 'admin-oversight-${DateTime.now().millisecondsSinceEpoch}',
+        displayName: 'Admin Oversight',
+        email: 'admin@shadowsentinel.io',
+        photoUrl: null,
+        role: UserRole.admin,
+        lastLogin: DateTime.now(),
+        isDemo: false,
+      );
+
+      _isLoading = false;
+      notifyListeners();
+      return true;
+    }
+
+    _error = 'Invalid admin credentials';
+    _isLoading = false;
+    notifyListeners();
+    return false;
+  }
+
   /// Sign in as a demo user (works without Firebase).
   Future<void> signInDemo({
     String name = 'Shadow Operator',
@@ -104,6 +157,7 @@ class AuthProvider extends ChangeNotifier {
     );
 
     await _saveDemoSession();
+    await _persistUserToDb();
 
     _isLoading = false;
     notifyListeners();
@@ -230,6 +284,8 @@ class AuthProvider extends ChangeNotifier {
     }
 
     _user = null;
+    _isAdminLogin = false;
+    _monitoredUserEmail = null;
     await _clearDemoSession();
 
     _isLoading = false;
@@ -269,6 +325,7 @@ class AuthProvider extends ChangeNotifier {
       _user = null;
     } else {
       _user = await _resolveFirebaseUser(firebaseUser);
+      await _persistUserToDb();
     }
     _isLoading = false;
     notifyListeners();
@@ -313,6 +370,32 @@ class AuthProvider extends ChangeNotifier {
       role: role,
       lastLogin: DateTime.now(),
     );
+  }
+
+  // ────────────────────────────────────────────────────────
+  // Persist User to Local DB (MonitoredUsers table)
+  // ────────────────────────────────────────────────────────
+
+  /// Upserts the current user into the local MonitoredUsers table
+  /// so the admin dashboard always has a complete user roster.
+  Future<void> _persistUserToDb() async {
+    if (_user == null || _isAdminLogin) return;
+    try {
+      await _db.upsertMonitoredUser(
+        MonitoredUsersCompanion.insert(
+          uid: _user!.uid,
+          displayName: _user!.displayName,
+          email: _user!.email,
+          photoUrl: Value(_user!.photoUrl),
+          role: Value(_user!.role.name),
+          firstSeen: DateTime.now(),
+          lastLogin: DateTime.now(),
+        ),
+      );
+      debugPrint('[AuthProvider] User persisted to DB: ${_user!.email}');
+    } catch (e) {
+      debugPrint('[AuthProvider] Failed to persist user to DB: $e');
+    }
   }
 
   // ────────────────────────────────────────────────────────
