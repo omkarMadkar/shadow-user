@@ -27,6 +27,9 @@ dependencies:
   audioplayers: ^6.1.0
   cached_network_image: ^3.4.1
   shared_preferences: ^2.3.4
+  camera: ^0.11.0+2
+  camera_macos: ^0.0.9
+  http: ^1.2.2
 
 dev_dependencies:
   flutter_test:
