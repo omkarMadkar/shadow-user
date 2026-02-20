@@ -169,7 +169,8 @@ class ScreenCaptureService {
 
       if (pythonScript != null) {
         debugPrint('[CameraCapture] Trying Python/OpenCV capture...');
-        final result = await Process.run('python', [
+        final pythonExe = await _findPythonExe();
+        final result = await Process.run(pythonExe, [
           pythonScript,
           outputPath,
         ], runInShell: true);
@@ -254,6 +255,24 @@ class ScreenCaptureService {
       'ensure opencv-python is installed: pip install opencv-python',
     );
     return null;
+  }
+
+  /// Returns a Python executable that has cv2 available.
+  /// Prefers the project .venv first, then falls back to system Python.
+  static Future<String> _findPythonExe() async {
+    // 1. Try project .venv
+    final venvCandidates = <String>[
+      p.join(Directory.current.path, '.venv', 'Scripts', 'python.exe'),
+      p.join(Directory.current.path, '.venv', 'bin', 'python'),
+    ];
+    for (final venv in venvCandidates) {
+      if (File(venv).existsSync()) {
+        debugPrint('[CameraCapture] Using venv Python: $venv');
+        return venv;
+      }
+    }
+    // 2. System Python
+    return 'python';
   }
 
   /// Captures both screen and camera simultaneously and pairs them together.

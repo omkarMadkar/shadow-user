@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math';
 import 'package:flutter/foundation.dart';
 import '../models/models.dart';
+import '../services/face_verification_service.dart';
 
 /// Central state management for the Shadow Sentinel dashboard.
 ///
@@ -46,20 +47,65 @@ class SentinelProvider extends ChangeNotifier {
 
   // ── Threats ──────────────────────────────────────────────
   final List<ThreatInfo> _threats = [
-    ThreatInfo(label: 'Shadow Users', count: 3, trend: 'up', severity: ThreatSeverity.high),
-    ThreatInfo(label: 'Proxy Tunnels', count: 1, trend: 'down', severity: ThreatSeverity.critical),
-    ThreatInfo(label: 'Device Anomalies', count: 7, trend: 'up', severity: ThreatSeverity.medium),
-    ThreatInfo(label: 'Auth Failures', count: 12, trend: 'stable', severity: ThreatSeverity.low),
+    ThreatInfo(
+      label: 'Shadow Users',
+      count: 3,
+      trend: 'up',
+      severity: ThreatSeverity.high,
+    ),
+    ThreatInfo(
+      label: 'Proxy Tunnels',
+      count: 1,
+      trend: 'down',
+      severity: ThreatSeverity.critical,
+    ),
+    ThreatInfo(
+      label: 'Device Anomalies',
+      count: 7,
+      trend: 'up',
+      severity: ThreatSeverity.medium,
+    ),
+    ThreatInfo(
+      label: 'Auth Failures',
+      count: 12,
+      trend: 'stable',
+      severity: ThreatSeverity.low,
+    ),
   ];
   List<ThreatInfo> get threats => _threats;
 
   // ── Online Users ─────────────────────────────────────────
   final List<OnlineUser> _onlineUsers = const [
-    OnlineUser(name: 'A. Sharma', trustScore: 94, status: UserVerificationStatus.verified, department: 'Engineering'),
-    OnlineUser(name: 'M. Chen', trustScore: 87, status: UserVerificationStatus.verified, department: 'Design'),
-    OnlineUser(name: 'J. Davis', trustScore: 62, status: UserVerificationStatus.monitoring, department: 'Marketing'),
-    OnlineUser(name: 'S. Kim', trustScore: 45, status: UserVerificationStatus.flagged, department: 'Sales'),
-    OnlineUser(name: 'R. Patel', trustScore: 91, status: UserVerificationStatus.verified, department: 'Engineering'),
+    OnlineUser(
+      name: 'A. Sharma',
+      trustScore: 94,
+      status: UserVerificationStatus.verified,
+      department: 'Engineering',
+    ),
+    OnlineUser(
+      name: 'M. Chen',
+      trustScore: 87,
+      status: UserVerificationStatus.verified,
+      department: 'Design',
+    ),
+    OnlineUser(
+      name: 'J. Davis',
+      trustScore: 62,
+      status: UserVerificationStatus.monitoring,
+      department: 'Marketing',
+    ),
+    OnlineUser(
+      name: 'S. Kim',
+      trustScore: 45,
+      status: UserVerificationStatus.flagged,
+      department: 'Sales',
+    ),
+    OnlineUser(
+      name: 'R. Patel',
+      trustScore: 91,
+      status: UserVerificationStatus.verified,
+      department: 'Engineering',
+    ),
   ];
   List<OnlineUser> get onlineUsers => _onlineUsers;
 
@@ -95,7 +141,8 @@ class SentinelProvider extends ChangeNotifier {
     EmailThreatType.spam: 9,
     EmailThreatType.suspicious: 2,
   };
-  Map<EmailThreatType, int> get threatBreakdown => Map.unmodifiable(_threatBreakdown);
+  Map<EmailThreatType, int> get threatBreakdown =>
+      Map.unmodifiable(_threatBreakdown);
 
   bool _emailScanActive = true;
   bool get emailScanActive => _emailScanActive;
@@ -105,36 +152,194 @@ class SentinelProvider extends ChangeNotifier {
   }
 
   // ══════════════════════════════════════════════════════════
-  // NEURAL CAMERA DETECTION
+  // NEURAL CAMERA DETECTION (Real Face Verification)
   // ══════════════════════════════════════════════════════════
 
+  final FaceVerificationService _faceService = FaceVerificationService.instance;
+
+  /// Whether the real face verification system is active.
+  bool _realCameraActive = false;
+  bool get realCameraActive => _realCameraActive;
+
+  /// Whether a reference face has been captured.
+  bool get hasReferenceFace => _faceService.hasReference;
+  String? get referenceFacePath => _faceService.referenceFacePath;
+
+  /// Path to the last captured verification face image.
+  String? _lastVerificationImagePath;
+  String? get lastVerificationImagePath => _lastVerificationImagePath;
+
+  /// Whether a verification is currently in progress.
+  bool _isVerifying = false;
+  bool get isVerifying => _isVerifying;
+
   FaceScanFrame _currentFrame = FaceScanFrame(
-    confidence: 96.2,
-    livenessScore: 98.1,
-    matched: true,
+    confidence: 0,
+    livenessScore: 0,
+    matched: false,
     spoofingAttempt: false,
     timestamp: DateTime.now(),
-    scanMode: 'CONTINUOUS',
+    scanMode: 'STANDBY',
   );
   FaceScanFrame get currentFrame => _currentFrame;
 
   final List<CameraSessionLog> _cameraLogs = [];
   List<CameraSessionLog> get cameraLogs => List.unmodifiable(_cameraLogs);
 
-  int _totalFramesAnalyzed = 1842;
+  int _totalFramesAnalyzed = 0;
   int get totalFramesAnalyzed => _totalFramesAnalyzed;
 
-  int _spoofingAttempts = 2;
+  int _spoofingAttempts = 0;
   int get spoofingAttempts => _spoofingAttempts;
 
-  double _avgConfidence = 95.7;
+  double _avgConfidence = 0;
   double get avgConfidence => _avgConfidence;
 
-  bool _neuralScanActive = true;
+  bool _neuralScanActive = false;
   bool get neuralScanActive => _neuralScanActive;
+
   void toggleNeuralScan() {
     _neuralScanActive = !_neuralScanActive;
+    if (_neuralScanActive && hasReferenceFace) {
+      startRealVerification();
+    } else {
+      stopRealVerification();
+    }
     notifyListeners();
+  }
+
+  /// Capture the reference face (called after login).
+  Future<String?> captureReferenceFace() async {
+    _isVerifying = true;
+    notifyListeners();
+
+    final path = await _faceService.captureReferenceFace();
+    _isVerifying = false;
+
+    if (path != null) {
+      _addCameraLog(
+        confidence: 100,
+        liveness: 100,
+        matched: true,
+        spoofing: false,
+        detail:
+            'Reference face captured — baseline enrolled for identity verification',
+      );
+      _currentFrame = FaceScanFrame(
+        confidence: 100,
+        livenessScore: 100,
+        matched: true,
+        spoofingAttempt: false,
+        timestamp: DateTime.now(),
+        scanMode: 'ENROLLED',
+      );
+    }
+
+    notifyListeners();
+    return path;
+  }
+
+  /// Load a previously captured reference face.
+  Future<bool> loadReferenceFace() async {
+    return await _faceService.loadExistingReference();
+  }
+
+  /// Run a single face verification check.
+  Future<FaceVerificationResult?> runSingleVerification() async {
+    if (!hasReferenceFace) return null;
+
+    _isVerifying = true;
+    _currentFrame = FaceScanFrame(
+      confidence: _currentFrame.confidence,
+      livenessScore: _currentFrame.livenessScore,
+      matched: _currentFrame.matched,
+      spoofingAttempt: _currentFrame.spoofingAttempt,
+      timestamp: DateTime.now(),
+      scanMode: 'SCANNING',
+    );
+    notifyListeners();
+
+    final result = await _faceService.verify();
+    _processVerificationResult(result);
+    _isVerifying = false;
+    notifyListeners();
+    return result;
+  }
+
+  /// Start periodic real face verification.
+  void startRealVerification({int intervalSeconds = 30}) {
+    if (_realCameraActive) return;
+    _realCameraActive = true;
+    _neuralScanActive = true;
+
+    _faceService.onVerificationResult = _processVerificationResult;
+    _faceService.startPeriodicVerification(intervalSeconds: intervalSeconds);
+    notifyListeners();
+  }
+
+  /// Stop periodic verification.
+  void stopRealVerification() {
+    _realCameraActive = false;
+    _faceService.stopPeriodicVerification();
+    notifyListeners();
+  }
+
+  /// Process a verification result from the face service.
+  void _processVerificationResult(FaceVerificationResult result) {
+    _totalFramesAnalyzed++;
+    _lastVerificationImagePath = result.capturedImagePath;
+
+    if (result.isSpoofingAttempt) {
+      _spoofingAttempts++;
+    }
+
+    // Update running average
+    if (_avgConfidence == 0) {
+      _avgConfidence = result.confidence;
+    } else {
+      _avgConfidence = _avgConfidence * 0.85 + result.confidence * 0.15;
+    }
+
+    _currentFrame = FaceScanFrame(
+      confidence: result.confidence,
+      livenessScore: result.livenessScore,
+      matched: result.matched,
+      spoofingAttempt: result.isSpoofingAttempt,
+      timestamp: result.timestamp,
+      scanMode: result.scanMode,
+    );
+
+    _addCameraLog(
+      confidence: result.confidence,
+      liveness: result.livenessScore,
+      matched: result.matched,
+      spoofing: result.isSpoofingAttempt,
+      detail: result.statusDetail,
+    );
+
+    notifyListeners();
+  }
+
+  void _addCameraLog({
+    required double confidence,
+    required double liveness,
+    required bool matched,
+    required bool spoofing,
+    required String detail,
+  }) {
+    _cameraLogs.insert(
+      0,
+      CameraSessionLog(
+        id: 'CAM-${DateTime.now().millisecondsSinceEpoch}-${_rng.nextInt(9999)}',
+        timestamp: DateTime.now(),
+        confidence: confidence,
+        livenessScore: liveness,
+        matched: matched,
+        spoofingAttempt: spoofing,
+        detail: detail,
+      ),
+    );
+    if (_cameraLogs.length > 50) _cameraLogs.removeLast();
   }
 
   // ── Timers ───────────────────────────────────────────────
@@ -146,8 +351,6 @@ class SentinelProvider extends ChangeNotifier {
   Timer? _threatTimer;
   Timer? _heatmapTimer;
   Timer? _emailTimer;
-  Timer? _neuralTimer;
-  Timer? _neuralLogTimer;
 
   // ────────────────────────────────────────────────────────
   // Initialization
@@ -157,7 +360,6 @@ class SentinelProvider extends ChangeNotifier {
     _initHeatmap();
     _generateInitialEvents();
     _generateInitialEmailThreats();
-    _generateInitialCameraLogs();
     _startSimulation();
   }
 
@@ -181,7 +383,9 @@ class SentinelProvider extends ChangeNotifier {
         }
         return ProductivitySlot(
           state: state,
-          intensity: state == ProductivityState.offline ? 0.3 : 0.5 + _rng.nextDouble() * 0.5,
+          intensity: state == ProductivityState.offline
+              ? 0.3
+              : 0.5 + _rng.nextDouble() * 0.5,
           dayIndex: day,
           hourIndex: hour,
         );
@@ -195,19 +399,40 @@ class SentinelProvider extends ChangeNotifier {
 
   static const List<Map<String, String>> _eventTemplates = [
     {'type': 'info', 'msg': 'Keystroke pattern validated — confidence {val}%'},
-    {'type': 'success', 'msg': 'User verified: Biometric face match ({val}% similarity)'},
-    {'type': 'warning', 'msg': 'Anomaly detected: Typing rhythm deviation ({val}%)'},
-    {'type': 'info', 'msg': 'Deep work session detected — {val} min continuous focus'},
+    {
+      'type': 'success',
+      'msg': 'User verified: Biometric face match ({val}% similarity)',
+    },
+    {
+      'type': 'warning',
+      'msg': 'Anomaly detected: Typing rhythm deviation ({val}%)',
+    },
+    {
+      'type': 'info',
+      'msg': 'Deep work session detected — {val} min continuous focus',
+    },
     {'type': 'error', 'msg': 'ALERT: Unknown device fingerprint — IP {ip}'},
-    {'type': 'success', 'msg': 'Periodic neural scan passed — identity confirmed'},
-    {'type': 'warning', 'msg': 'Burnout risk elevated: fatigue index at {val}%'},
+    {
+      'type': 'success',
+      'msg': 'Periodic neural scan passed — identity confirmed',
+    },
+    {
+      'type': 'warning',
+      'msg': 'Burnout risk elevated: fatigue index at {val}%',
+    },
     {'type': 'info', 'msg': 'Keystroke cadence stable — avg latency {val}ms'},
     {'type': 'error', 'msg': 'CRITICAL: Proxy tunnel detected on port {val}'},
     {'type': 'success', 'msg': 'Camera polling: frame captured — no anomalies'},
-    {'type': 'warning', 'msg': 'Typing pattern shift: possible user switch ({val}% drift)'},
+    {
+      'type': 'warning',
+      'msg': 'Typing pattern shift: possible user switch ({val}% drift)',
+    },
     {'type': 'info', 'msg': 'Session heartbeat — all sentinel modules nominal'},
     {'type': 'info', 'msg': 'Behavioral baseline updated — model v2.{val}'},
-    {'type': 'error', 'msg': 'ALERT: Multiple authentication failures from {ip}'},
+    {
+      'type': 'error',
+      'msg': 'ALERT: Multiple authentication failures from {ip}',
+    },
     {'type': 'success', 'msg': 'Zero Trust check passed — device compliant'},
   ];
 
@@ -266,7 +491,8 @@ class SentinelProvider extends ChangeNotifier {
       'domain': 'paypa1.com',
       'subject': 'Urgent: Your account has been compromised',
       'type': 'phishing',
-      'detail': 'Sender domain typosquats paypal.com. Contains credential harvesting link.',
+      'detail':
+          'Sender domain typosquats paypal.com. Contains credential harvesting link.',
       'indicators': ['Domain spoofing', 'Urgency language', 'Suspicious link'],
     },
     {
@@ -275,7 +501,11 @@ class SentinelProvider extends ChangeNotifier {
       'subject': 'Order #3847291 - Payment declined, action required',
       'type': 'phishing',
       'detail': 'Fake order notification. Links redirect to phishing page.',
-      'indicators': ['Fake domain', 'Social engineering', 'Credential harvesting'],
+      'indicators': [
+        'Fake domain',
+        'Social engineering',
+        'Credential harvesting',
+      ],
     },
     {
       'sender': 'admin@company-docs.ru',
@@ -307,7 +537,11 @@ class SentinelProvider extends ChangeNotifier {
       'subject': 'Your Microsoft 365 subscription expires today',
       'type': 'phishing',
       'detail': 'Fake subscription renewal page. Harvests credit card data.',
-      'indicators': ['Brand impersonation', 'Urgency tactics', 'Card harvesting'],
+      'indicators': [
+        'Brand impersonation',
+        'Urgency tactics',
+        'Card harvesting',
+      ],
     },
     {
       'sender': 'hr@trusted-careers.info',
@@ -315,14 +549,19 @@ class SentinelProvider extends ChangeNotifier {
       'subject': 'Job Offer: Senior Developer - ₹45 LPA (Remote)',
       'type': 'spam',
       'detail': 'Fake job offer. Collects personal data for identity theft.',
-      'indicators': ['Too-good-to-be-true', 'Data harvesting', 'No company verification'],
+      'indicators': [
+        'Too-good-to-be-true',
+        'Data harvesting',
+        'No company verification',
+      ],
     },
     {
       'sender': 'invoice@quickbooks-billing.net',
       'domain': 'quickbooks-billing.net',
       'subject': 'Invoice #INV-2947 attached - Payment overdue',
       'type': 'malware',
-      'detail': 'PDF attachment exploits CVE-2024-XXXX. Contains ransomware dropper.',
+      'detail':
+          'PDF attachment exploits CVE-2024-XXXX. Contains ransomware dropper.',
       'indicators': ['Exploit payload', 'Ransomware dropper', 'Fake invoice'],
     },
     {
@@ -331,7 +570,11 @@ class SentinelProvider extends ChangeNotifier {
       'subject': 'Someone tried to log into your Instagram',
       'type': 'phishing',
       'detail': 'Fake login alert. Redirects to credential phishing page.',
-      'indicators': ['Social media impersonation', 'Login phishing', 'Fake alert'],
+      'indicators': [
+        'Social media impersonation',
+        'Login phishing',
+        'Fake alert',
+      ],
     },
     {
       'sender': 'delivery@fedex-tracking.biz',
@@ -339,7 +582,11 @@ class SentinelProvider extends ChangeNotifier {
       'subject': 'Your package delivery failed - reschedule now',
       'type': 'suspicious',
       'detail': 'Suspicious link to unknown tracking portal. Under analysis.',
-      'indicators': ['Brand impersonation', 'Suspicious redirect', 'Under review'],
+      'indicators': [
+        'Brand impersonation',
+        'Suspicious redirect',
+        'Under review',
+      ],
     },
     {
       'sender': 'contact@tech-update-center.org',
@@ -360,7 +607,8 @@ class SentinelProvider extends ChangeNotifier {
   ];
 
   EmailThreat _generateEmailThreat() {
-    final template = _emailThreatTemplates[_rng.nextInt(_emailThreatTemplates.length)];
+    final template =
+        _emailThreatTemplates[_rng.nextInt(_emailThreatTemplates.length)];
 
     EmailThreatType type;
     switch (template['type']) {
@@ -415,56 +663,6 @@ class SentinelProvider extends ChangeNotifier {
   // ────────────────────────────────────────────────────────
   // Neural Camera Simulation Data
   // ────────────────────────────────────────────────────────
-
-  static const List<String> _scanModes = [
-    'CONTINUOUS', 'DEEP_SCAN', 'LIVENESS_CHECK', 'IDENTITY_VERIFY', 'ANTI_SPOOF'
-  ];
-
-  static const List<String> _cameraLogDetails = [
-    'Face match confirmed — identity verified at {val}% confidence',
-    'Liveness check passed — eye movement detected, score {val}%',
-    'Deep scan complete — facial geometry matched baseline model',
-    'Anti-spoofing check: Real face detected (not photo/mask)',
-    'Continuous monitoring — no anomalies in last {val} frames',
-    'Identity re-verified after idle period — match confirmed',
-    'ALERT: Potential spoofing attempt — photo presentation detected',
-    'ALERT: Unknown face detected — initiating lockdown protocol',
-    'Micro-expression analysis complete — stress level normal',
-    'Infrared depth map validated — 3D face structure confirmed',
-  ];
-
-  CameraSessionLog _generateCameraLog({bool forceSpoofing = false}) {
-    final isSpoofing = forceSpoofing || _rng.nextDouble() < 0.08;
-    final confidence = isSpoofing ? 15.0 + _rng.nextDouble() * 30 : 88.0 + _rng.nextDouble() * 11.5;
-    final liveness = isSpoofing ? 10.0 + _rng.nextDouble() * 25 : 90.0 + _rng.nextDouble() * 9.5;
-    final val = _rng.nextInt(50) + 50;
-
-    String detail;
-    if (isSpoofing) {
-      detail = _rng.nextBool()
-          ? 'ALERT: Potential spoofing attempt — photo presentation detected'
-          : 'ALERT: Unknown face detected — initiating lockdown protocol';
-    } else {
-      final template = _cameraLogDetails[_rng.nextInt(_cameraLogDetails.length - 2)];
-      detail = template.replaceAll('{val}', val.toString());
-    }
-
-    return CameraSessionLog(
-      id: 'CAM-${DateTime.now().millisecondsSinceEpoch}-${_rng.nextInt(9999)}',
-      timestamp: DateTime.now(),
-      confidence: confidence,
-      livenessScore: liveness,
-      matched: !isSpoofing,
-      spoofingAttempt: isSpoofing,
-      detail: detail,
-    );
-  }
-
-  void _generateInitialCameraLogs() {
-    for (int i = 0; i < 12; i++) {
-      _cameraLogs.add(_generateCameraLog());
-    }
-  }
 
   // ────────────────────────────────────────────────────────
   // Simulation Engine
@@ -586,39 +784,10 @@ class SentinelProvider extends ChangeNotifier {
       notifyListeners();
     });
 
-    // ── Neural Camera Simulation ────────────────────────────
-    _neuralTimer = Timer.periodic(const Duration(milliseconds: 800), (_) {
-      if (!_neuralScanActive) return;
-
-      final isSpoofing = _rng.nextDouble() < 0.03;
-      final conf = isSpoofing ? 15 + _rng.nextDouble() * 30 : 88 + _rng.nextDouble() * 11.5;
-      final live = isSpoofing ? 10 + _rng.nextDouble() * 25 : 90 + _rng.nextDouble() * 9.5;
-
-      _currentFrame = FaceScanFrame(
-        confidence: conf,
-        livenessScore: live,
-        matched: !isSpoofing,
-        spoofingAttempt: isSpoofing,
-        timestamp: DateTime.now(),
-        scanMode: _scanModes[_rng.nextInt(_scanModes.length)],
-      );
-      _totalFramesAnalyzed++;
-      if (isSpoofing) _spoofingAttempts++;
-
-      // Running average
-      _avgConfidence = _avgConfidence * 0.99 + conf * 0.01;
-
-      notifyListeners();
-    });
-
-    // ── Camera Log Entries ──────────────────────────────────
-    _neuralLogTimer = Timer.periodic(const Duration(seconds: 3), (_) {
-      if (!_neuralScanActive) return;
-      final log = _generateCameraLog();
-      _cameraLogs.insert(0, log);
-      if (_cameraLogs.length > 40) _cameraLogs.removeLast();
-      notifyListeners();
-    });
+    // ── Neural Camera ──────────────────────────────────────
+    // Real face verification is started separately via
+    // startRealVerification() after reference face capture.
+    // No simulation timers — the camera system is real.
   }
 
   // ────────────────────────────────────────────────────────
@@ -674,8 +843,7 @@ class SentinelProvider extends ChangeNotifier {
     _threatTimer?.cancel();
     _heatmapTimer?.cancel();
     _emailTimer?.cancel();
-    _neuralTimer?.cancel();
-    _neuralLogTimer?.cancel();
+    _faceService.dispose();
     super.dispose();
   }
 }

@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/sentinel_provider.dart';
@@ -42,7 +43,7 @@ class NeuralCameraScreen extends StatelessWidget {
   Widget _wideLayout(SentinelProvider provider) {
     return Column(
       children: [
-        // Top row: Face scan + Stats
+        // Top row: Face scan + Face preview + Stats
         IntrinsicHeight(
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -60,10 +61,11 @@ class NeuralCameraScreen extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 16),
+              // Face image preview card
+              SizedBox(width: 260, child: _FacePreviewCard(provider: provider)),
+              const SizedBox(width: 16),
               // Stats panel
-              Expanded(
-                child: _NeuralStatsPanel(provider: provider),
-              ),
+              Expanded(child: _NeuralStatsPanel(provider: provider)),
             ],
           ),
         ),
@@ -88,6 +90,8 @@ class NeuralCameraScreen extends StatelessWidget {
           scanMode: provider.currentFrame.scanMode,
           isActive: provider.neuralScanActive,
         ),
+        const SizedBox(height: 16),
+        _FacePreviewCard(provider: provider),
         const SizedBox(height: 16),
         _NeuralStatsPanel(provider: provider),
         const SizedBox(height: 16),
@@ -126,9 +130,15 @@ class _NeuralCameraHeader extends StatelessWidget {
                 ],
               ),
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: SentinelTheme.cyberCyan.withValues(alpha: 0.2)),
+              border: Border.all(
+                color: SentinelTheme.cyberCyan.withValues(alpha: 0.2),
+              ),
             ),
-            child: Icon(Icons.videocam, color: SentinelTheme.cyberCyan, size: 24),
+            child: Icon(
+              Icons.videocam,
+              color: SentinelTheme.cyberCyan,
+              size: 24,
+            ),
           ),
           const SizedBox(width: 14),
 
@@ -187,14 +197,64 @@ class _NeuralCameraHeader extends StatelessWidget {
                   color: provider.avgConfidence > 90
                       ? SentinelTheme.alertGreen
                       : provider.avgConfidence > 70
-                          ? SentinelTheme.alertAmber
-                          : SentinelTheme.alertRed,
+                      ? SentinelTheme.alertAmber
+                      : SentinelTheme.alertRed,
                 ),
               ),
             ],
           ),
 
           const SizedBox(width: 16),
+
+          // Verify Now button
+          GestureDetector(
+            onTap: provider.isVerifying || !provider.hasReferenceFace
+                ? null
+                : () => provider.runSingleVerification(),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              decoration: BoxDecoration(
+                color: provider.isVerifying
+                    ? SentinelTheme.cyberCyan.withValues(alpha: 0.05)
+                    : SentinelTheme.cyberCyan.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: SentinelTheme.cyberCyan.withValues(alpha: 0.3),
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (provider.isVerifying)
+                    SizedBox(
+                      width: 12,
+                      height: 12,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 1.5,
+                        color: SentinelTheme.cyberCyan,
+                      ),
+                    )
+                  else
+                    Icon(
+                      Icons.center_focus_strong,
+                      size: 14,
+                      color: SentinelTheme.cyberCyan,
+                    ),
+                  const SizedBox(width: 6),
+                  Text(
+                    provider.isVerifying ? 'VERIFYING…' : 'VERIFY NOW',
+                    style: SentinelTheme.mono.copyWith(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                      color: SentinelTheme.cyberCyan,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          const SizedBox(width: 10),
 
           // Toggle
           GestureDetector(
@@ -216,7 +276,9 @@ class _NeuralCameraHeader extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Icon(
-                    provider.neuralScanActive ? Icons.visibility : Icons.visibility_off,
+                    provider.neuralScanActive
+                        ? Icons.visibility
+                        : Icons.visibility_off,
                     size: 14,
                     color: provider.neuralScanActive
                         ? SentinelTheme.alertGreen
@@ -309,7 +371,8 @@ class _NeuralStatsPanel extends StatelessWidget {
               const SizedBox(width: 8),
               _StatTile(
                 label: 'CURRENT LIVENESS',
-                value: '${provider.currentFrame.livenessScore.toStringAsFixed(1)}%',
+                value:
+                    '${provider.currentFrame.livenessScore.toStringAsFixed(1)}%',
                 icon: Icons.favorite,
                 color: SentinelTheme.cyberCyan,
               ),
@@ -330,12 +393,32 @@ class _NeuralStatsPanel extends StatelessWidget {
           ),
           const SizedBox(height: 10),
 
-          _CapabilityRow('Face Geometry Matching', true, SentinelTheme.alertGreen),
+          _CapabilityRow(
+            'Face Geometry Matching',
+            true,
+            SentinelTheme.alertGreen,
+          ),
           _CapabilityRow('Liveness Detection', true, SentinelTheme.alertGreen),
-          _CapabilityRow('Anti-Spoofing (Photo/Mask)', true, SentinelTheme.alertGreen),
-          _CapabilityRow('Infrared Depth Mapping', true, SentinelTheme.cyberBlue),
-          _CapabilityRow('Micro-Expression Analysis', true, SentinelTheme.cyberCyan),
-          _CapabilityRow('Multi-Face Detection', true, SentinelTheme.alertAmber),
+          _CapabilityRow(
+            'Anti-Spoofing (Photo/Mask)',
+            true,
+            SentinelTheme.alertGreen,
+          ),
+          _CapabilityRow(
+            'Infrared Depth Mapping',
+            true,
+            SentinelTheme.cyberBlue,
+          ),
+          _CapabilityRow(
+            'Micro-Expression Analysis',
+            true,
+            SentinelTheme.cyberCyan,
+          ),
+          _CapabilityRow(
+            'Multi-Face Detection',
+            true,
+            SentinelTheme.alertAmber,
+          ),
         ],
       ),
     );
@@ -453,6 +536,189 @@ class _CapabilityRow extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+// ─── Face Preview Card ────────────────────────────────────────
+
+class _FacePreviewCard extends StatelessWidget {
+  final SentinelProvider provider;
+
+  const _FacePreviewCard({required this.provider});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: SentinelTheme.glassCard(
+        glowColor: provider.hasReferenceFace
+            ? SentinelTheme.alertGreen
+            : SentinelTheme.alertAmber,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header
+          Row(
+            children: [
+              Icon(Icons.face, size: 16, color: SentinelTheme.cyberCyan),
+              const SizedBox(width: 8),
+              Text(
+                'IDENTITY SNAPSHOTS',
+                style: SentinelTheme.mono.copyWith(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                  color: SentinelTheme.cyberCyan,
+                  letterSpacing: 1,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+
+          // Reference face
+          Text(
+            'ENROLLED FACE',
+            style: SentinelTheme.mono.copyWith(
+              fontSize: 8,
+              color: SentinelTheme.textMuted,
+              letterSpacing: 1,
+            ),
+          ),
+          const SizedBox(height: 6),
+          _buildImageTile(
+            imagePath: provider.referenceFacePath,
+            placeholder: 'No reference enrolled',
+            borderColor: SentinelTheme.alertGreen,
+          ),
+          const SizedBox(height: 12),
+
+          // Last verification capture
+          Text(
+            'LAST VERIFICATION',
+            style: SentinelTheme.mono.copyWith(
+              fontSize: 8,
+              color: SentinelTheme.textMuted,
+              letterSpacing: 1,
+            ),
+          ),
+          const SizedBox(height: 6),
+          _buildImageTile(
+            imagePath: provider.lastVerificationImagePath,
+            placeholder: 'No verification yet',
+            borderColor: SentinelTheme.cyberBlue,
+          ),
+
+          const SizedBox(height: 14),
+
+          // Status line
+          if (!provider.hasReferenceFace)
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: SentinelTheme.alertAmber.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(
+                  color: SentinelTheme.alertAmber.withValues(alpha: 0.2),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.warning_amber_rounded,
+                    size: 14,
+                    color: SentinelTheme.alertAmber,
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      'No reference face enrolled. Capture a face during login to enable verification.',
+                      style: SentinelTheme.sans.copyWith(
+                        fontSize: 9,
+                        color: SentinelTheme.alertAmber,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            )
+          else
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: SentinelTheme.alertGreen.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(
+                  color: SentinelTheme.alertGreen.withValues(alpha: 0.2),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.verified_user,
+                    size: 14,
+                    color: SentinelTheme.alertGreen,
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      provider.neuralScanActive
+                          ? 'Real-time verification active'
+                          : 'Reference enrolled • Paused',
+                      style: SentinelTheme.sans.copyWith(
+                        fontSize: 9,
+                        color: SentinelTheme.alertGreen,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildImageTile({
+    required String? imagePath,
+    required String placeholder,
+    required Color borderColor,
+  }) {
+    final file = imagePath != null ? File(imagePath) : null;
+    final exists = file != null && file.existsSync();
+
+    return Container(
+      height: 90,
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: SentinelTheme.surface,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: borderColor.withValues(alpha: 0.25)),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: exists
+          ? Image.file(file, fit: BoxFit.cover)
+          : Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.no_photography,
+                    size: 22,
+                    color: SentinelTheme.textMuted,
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    placeholder,
+                    style: SentinelTheme.mono.copyWith(
+                      fontSize: 8,
+                      color: SentinelTheme.textMuted,
+                    ),
+                  ),
+                ],
+              ),
+            ),
     );
   }
 }

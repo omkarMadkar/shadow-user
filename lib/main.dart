@@ -11,6 +11,7 @@ import 'screens/voice_sentinel_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/screen_capture_test_screen.dart';
 import 'screens/admin_dashboard_screen.dart';
+import 'screens/face_enrollment_screen.dart';
 import 'widgets/sentinel_header.dart';
 
 void main() async {
@@ -96,6 +97,63 @@ class _AuthGate extends StatelessWidget {
     // Tag voice sessions with the current user's email
     final voiceProv = context.read<VoiceSentinelProvider>();
     voiceProv.currentUserEmail = auth.user?.email ?? 'unknown';
+
+    return const _FaceGate();
+  }
+}
+
+/// Shows face enrollment once, then proceeds to MainShell.
+class _FaceGate extends StatefulWidget {
+  const _FaceGate();
+
+  @override
+  State<_FaceGate> createState() => _FaceGateState();
+}
+
+class _FaceGateState extends State<_FaceGate> {
+  bool _enrolled = false;
+  bool _checking = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkExistingReference();
+  }
+
+  Future<void> _checkExistingReference() async {
+    final provider = context.read<SentinelProvider>();
+    final hasRef = await provider.loadReferenceFace();
+    if (hasRef) {
+      // Already enrolled — start verification and go to dashboard
+      provider.startRealVerification(intervalSeconds: 30);
+      setState(() {
+        _enrolled = true;
+        _checking = false;
+      });
+    } else {
+      setState(() => _checking = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_checking) {
+      return Scaffold(
+        backgroundColor: SentinelTheme.bg,
+        body: Center(
+          child: CircularProgressIndicator(
+            strokeWidth: 2,
+            color: SentinelTheme.cyberBlue,
+          ),
+        ),
+      );
+    }
+
+    if (!_enrolled) {
+      return FaceEnrollmentScreen(
+        onComplete: () => setState(() => _enrolled = true),
+      );
+    }
 
     return const MainShell();
   }
