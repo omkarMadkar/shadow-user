@@ -36,7 +36,8 @@ class ThreatOverviewPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
+    return SingleChildScrollView(
+      child: Column(
       children: [
         // ── Active Threats ──
         Container(
@@ -273,6 +274,7 @@ class ThreatOverviewPanel extends StatelessWidget {
           ),
         ),
       ],
+      ),
     );
   }
 }

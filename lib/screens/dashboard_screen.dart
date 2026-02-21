@@ -62,9 +62,9 @@ class DashboardScreen extends StatelessWidget {
         const SizedBox(height: 16),
         // Middle row: Threats + Users | Event Log
         SizedBox(
-          height: 280,
+          height: 580,
           child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Expanded(
                 flex: 5,
@@ -81,7 +81,7 @@ class DashboardScreen extends StatelessWidget {
         const SizedBox(height: 16),
         // Bottom row: Productivity Heatmap (full width)
         const SizedBox(
-          height: 340,
+          height: 380,
           child: ProductivityHeatmapWidget(),
         ),
       ],
