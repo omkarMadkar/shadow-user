@@ -5,10 +5,18 @@ import '../providers/sentinel_provider.dart';
 import '../theme/sentinel_theme.dart';
 import '../widgets/face_scan_widget.dart';
 import '../widgets/camera_log_widget.dart';
+import '../widgets/live_camera_widget.dart';
 
 /// Neural camera detection dashboard screen.
-class NeuralCameraScreen extends StatelessWidget {
+class NeuralCameraScreen extends StatefulWidget {
   const NeuralCameraScreen({super.key});
+
+  @override
+  State<NeuralCameraScreen> createState() => _NeuralCameraScreenState();
+}
+
+class _NeuralCameraScreenState extends State<NeuralCameraScreen> {
+  bool _useLiveCamera = false;
 
   @override
   Widget build(BuildContext context) {
@@ -20,7 +28,13 @@ class NeuralCameraScreen extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // ── Neural Camera Header ────────────────────
-              _NeuralCameraHeader(provider: provider),
+              _NeuralCameraHeader(
+                provider: provider,
+                useLiveCamera: _useLiveCamera,
+                onToggleLiveCamera: () {
+                  setState(() => _useLiveCamera = !_useLiveCamera);
+                },
+              ),
 
               const SizedBox(height: 16),
 
@@ -48,17 +62,19 @@ class NeuralCameraScreen extends StatelessWidget {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Face scan widget
+              // Face scan widget or Live camera
               SizedBox(
                 width: 420,
-                child: FaceScanWidget(
-                  confidence: provider.currentFrame.confidence,
-                  livenessScore: provider.currentFrame.livenessScore,
-                  matched: provider.currentFrame.matched,
-                  spoofingAttempt: provider.currentFrame.spoofingAttempt,
-                  scanMode: provider.currentFrame.scanMode,
-                  isActive: provider.neuralScanActive,
-                ),
+                child: _useLiveCamera
+                    ? LiveCameraWidget(isActive: provider.neuralScanActive)
+                    : FaceScanWidget(
+                        confidence: provider.currentFrame.confidence,
+                        livenessScore: provider.currentFrame.livenessScore,
+                        matched: provider.currentFrame.matched,
+                        spoofingAttempt: provider.currentFrame.spoofingAttempt,
+                        scanMode: provider.currentFrame.scanMode,
+                        isActive: provider.neuralScanActive,
+                      ),
               ),
               const SizedBox(width: 16),
               // Face image preview card
@@ -82,14 +98,16 @@ class NeuralCameraScreen extends StatelessWidget {
   Widget _narrowLayout(SentinelProvider provider) {
     return Column(
       children: [
-        FaceScanWidget(
-          confidence: provider.currentFrame.confidence,
-          livenessScore: provider.currentFrame.livenessScore,
-          matched: provider.currentFrame.matched,
-          spoofingAttempt: provider.currentFrame.spoofingAttempt,
-          scanMode: provider.currentFrame.scanMode,
-          isActive: provider.neuralScanActive,
-        ),
+        _useLiveCamera
+            ? LiveCameraWidget(isActive: provider.neuralScanActive)
+            : FaceScanWidget(
+                confidence: provider.currentFrame.confidence,
+                livenessScore: provider.currentFrame.livenessScore,
+                matched: provider.currentFrame.matched,
+                spoofingAttempt: provider.currentFrame.spoofingAttempt,
+                scanMode: provider.currentFrame.scanMode,
+                isActive: provider.neuralScanActive,
+              ),
         const SizedBox(height: 16),
         _FacePreviewCard(provider: provider),
         const SizedBox(height: 16),
@@ -108,8 +126,14 @@ class NeuralCameraScreen extends StatelessWidget {
 
 class _NeuralCameraHeader extends StatelessWidget {
   final SentinelProvider provider;
+  final bool useLiveCamera;
+  final VoidCallback onToggleLiveCamera;
 
-  const _NeuralCameraHeader({required this.provider});
+  const _NeuralCameraHeader({
+    required this.provider,
+    required this.useLiveCamera,
+    required this.onToggleLiveCamera,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -254,9 +278,53 @@ class _NeuralCameraHeader extends StatelessWidget {
             ),
           ),
 
-          const SizedBox(width: 10),
+          const SizedBox(width: 8),
 
-          // Toggle
+          // Live camera toggle
+          GestureDetector(
+            onTap: onToggleLiveCamera,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              decoration: BoxDecoration(
+                color: useLiveCamera
+                    ? SentinelTheme.cyberCyan.withValues(alpha: 0.1)
+                    : SentinelTheme.textMuted.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: useLiveCamera
+                      ? SentinelTheme.cyberCyan.withValues(alpha: 0.3)
+                      : SentinelTheme.border,
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    useLiveCamera ? Icons.videocam : Icons.videocam_off,
+                    size: 14,
+                    color: useLiveCamera
+                        ? SentinelTheme.cyberCyan
+                        : SentinelTheme.textMuted,
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    useLiveCamera ? 'LIVE' : 'SIM',
+                    style: SentinelTheme.mono.copyWith(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                      color: useLiveCamera
+                          ? SentinelTheme.cyberCyan
+                          : SentinelTheme.textMuted,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          const SizedBox(width: 8),
+
+          // Active/Paused toggle
           GestureDetector(
             onTap: provider.toggleNeuralScan,
             child: Container(

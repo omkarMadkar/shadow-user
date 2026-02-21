@@ -6,19 +6,49 @@ import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import '../models/models.dart';
 import '../services/face_verification_service.dart';
+import '../services/api_service.dart';
 
 /// Central state management for the Shadow Sentinel dashboard.
 ///
 /// Manages trust score, keystroke metrics, neural scan results,
 /// security events, productivity heatmap, threat data,
 /// email fraud detection, and neural camera detection.
+///
+/// Now integrates with Python backend API for real AI analysis.
 class SentinelProvider extends ChangeNotifier {
   final Random _rng = Random();
+
+  // ── API Service ────────────────────────────────────────────
+  final ApiService _api = ApiService();
+  ApiService get api => _api;
+
+  bool _apiConnected = false;
+  bool get apiConnected => _apiConnected;
+
+  // ── Demo Mode Controls ─────────────────────────────────────
+  bool _demoModeEnabled = true;
+  bool get demoModeEnabled => _demoModeEnabled;
+
+  /// Active demo scenario (null = normal operation)
+  DemoScenario? _activeScenario;
+  DemoScenario? get activeScenario => _activeScenario;
+
+  // ── Trust Score Components ─────────────────────────────────
+  double _faceConfidence = 95.0;
+  double _keystrokeMatch = 87.0;
+  double _activitySafety = 90.0;
+
+  double get faceConfidence => _faceConfidence;
+  double get keystrokeMatch => _keystrokeMatch;
+  double get activitySafety => _activitySafety;
 
   // ── Trust Score ──────────────────────────────────────────
   double _trustScore = 87.0;
   double _targetTrust = 87.0;
   double get trustScore => _trustScore;
+
+  String _trustRiskLevel = 'LOW';
+  String get trustRiskLevel => _trustRiskLevel;
 
   // ── Module States ────────────────────────────────────────
   final SentinelModuleState _keystrokeState = SentinelModuleState.active;
@@ -438,6 +468,9 @@ class SentinelProvider extends ChangeNotifier {
   Timer? _heatmapTimer;
   Timer? _emailTimer;
 
+  // ── API Integration Timer ───────────────────────────────
+  Timer? _apiPollTimer;
+
   // ────────────────────────────────────────────────────────
   // Initialization
   // ────────────────────────────────────────────────────────
@@ -447,6 +480,287 @@ class SentinelProvider extends ChangeNotifier {
     _generateInitialEvents();
     _generateInitialEmailThreats();
     _startSimulation();
+    _initApiConnection();
+  }
+
+  /// Initialize API connection and start polling
+  Future<void> _initApiConnection() async {
+    _apiConnected = await _api.checkHealth();
+    debugPrint('[SentinelProvider] API connected: $_apiConnected');
+
+    // Start API polling timer (every 5 seconds)
+    _apiPollTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+      _pollApiForUpdates();
+    });
+
+    notifyListeners();
+  }
+
+  /// Poll API for real-time updates
+  Future<void> _pollApiForUpdates() async {
+    if (!_demoModeEnabled) return;
+
+    // Check if scenario is active and apply it
+    if (_activeScenario != null) {
+      await _applyDemoScenario(_activeScenario!);
+    } else {
+      // Normal operation - poll for real data
+      await _fetchTrustScoreFromApi();
+    }
+  }
+
+  /// Fetch trust score from API using current component values
+  Future<void> _fetchTrustScoreFromApi() async {
+    final result = await _api.calculateTrustScore(
+      faceConfidence: _faceConfidence,
+      keystrokeMatch: _keystrokeMatch,
+      activitySafety: _activitySafety,
+    );
+
+    if (result.success) {
+      _targetTrust = result.trustScore;
+      _trustRiskLevel = result.riskLevel;
+    }
+  }
+
+  // ────────────────────────────────────────────────────────
+  // Demo Mode Controls
+  // ────────────────────────────────────────────────────────
+
+  /// Toggle demo mode on/off
+  void toggleDemoMode() {
+    _demoModeEnabled = !_demoModeEnabled;
+    if (!_demoModeEnabled) {
+      _activeScenario = null;
+    }
+    notifyListeners();
+  }
+
+  /// Activate a specific demo scenario
+  void activateScenario(DemoScenario scenario) {
+    _activeScenario = scenario;
+    _applyDemoScenario(scenario);
+
+    // Add security event for the scenario
+    _events.insert(
+      0,
+      SecurityEvent(
+        id: '${DateTime.now().millisecondsSinceEpoch}-scenario',
+        message: _getScenarioEventMessage(scenario),
+        severity: _getScenarioSeverity(scenario),
+        timestamp: DateTime.now(),
+      ),
+    );
+
+    notifyListeners();
+  }
+
+  /// Deactivate current demo scenario
+  void deactivateScenario() {
+    _activeScenario = null;
+
+    // Reset to normal values
+    _faceConfidence = 92.0 + _rng.nextDouble() * 7;
+    _keystrokeMatch = 85.0 + _rng.nextDouble() * 10;
+    _activitySafety = 88.0 + _rng.nextDouble() * 10;
+    _targetTrust =
+        (_faceConfidence * 0.4) +
+        (_keystrokeMatch * 0.4) +
+        (_activitySafety * 0.2);
+    _trustRiskLevel = 'LOW';
+
+    _events.insert(
+      0,
+      SecurityEvent(
+        id: '${DateTime.now().millisecondsSinceEpoch}-recovery',
+        message: 'Demo scenario ended — normal operation resumed',
+        severity: ThreatSeverity.low,
+        timestamp: DateTime.now(),
+      ),
+    );
+
+    notifyListeners();
+  }
+
+  /// Apply the effects of a demo scenario
+  Future<void> _applyDemoScenario(DemoScenario scenario) async {
+    switch (scenario) {
+      case DemoScenario.identityMismatch:
+        _faceConfidence = 25.0 + _rng.nextDouble() * 15;
+        _keystrokeMatch = 30.0 + _rng.nextDouble() * 20;
+        _activitySafety = 85.0;
+        _currentFrame = FaceScanFrame(
+          confidence: _faceConfidence,
+          livenessScore: 88.0,
+          matched: false,
+          spoofingAttempt: false,
+          timestamp: DateTime.now(),
+          scanMode: 'ALERT',
+        );
+        break;
+
+      case DemoScenario.spoofingAttempt:
+        _faceConfidence = 15.0 + _rng.nextDouble() * 10;
+        _keystrokeMatch = 80.0;
+        _activitySafety = 40.0;
+        _spoofingAttempts++;
+        _currentFrame = FaceScanFrame(
+          confidence: _faceConfidence,
+          livenessScore: 12.0 + _rng.nextDouble() * 15,
+          matched: false,
+          spoofingAttempt: true,
+          timestamp: DateTime.now(),
+          scanMode: 'ANTI_SPOOF',
+        );
+        break;
+
+      case DemoScenario.keystrokeAnomaly:
+        _faceConfidence = 92.0;
+        _keystrokeMatch = 20.0 + _rng.nextDouble() * 15;
+        _activitySafety = 85.0;
+        _keystrokeMetrics = KeystrokeMetrics(
+          cadenceWpm: 45 + _rng.nextDouble() * 20,
+          patternDrift: 0.65 + _rng.nextDouble() * 0.25,
+          holdTimeMean: 150 + _rng.nextDouble() * 50,
+          flightTimeMean: 200 + _rng.nextDouble() * 80,
+          timestamp: DateTime.now(),
+        );
+        break;
+
+      case DemoScenario.phishingDetected:
+        _faceConfidence = 94.0;
+        _keystrokeMatch = 88.0;
+        _activitySafety = 15.0 + _rng.nextDouble() * 10;
+        // Add phishing email threat
+        _emailThreats.insert(0, _generateEmailThreat());
+        _threatsBlocked++;
+        break;
+
+      case DemoScenario.burnoutRisk:
+        _faceConfidence = 90.0;
+        _keystrokeMatch = 75.0;
+        _activitySafety = 70.0;
+        // Update heatmap to show burnout pattern
+        for (int h = 8; h < 13; h++) {
+          _heatmapData[4][h] = ProductivitySlot(
+            state: ProductivityState.burnoutRisk,
+            intensity: 0.85,
+            dayIndex: 4,
+            hourIndex: h,
+          );
+        }
+        break;
+
+      case DemoScenario.normalOperation:
+        _faceConfidence = 95.0 + _rng.nextDouble() * 4;
+        _keystrokeMatch = 90.0 + _rng.nextDouble() * 8;
+        _activitySafety = 92.0 + _rng.nextDouble() * 7;
+        break;
+    }
+
+    // Compute trust score
+    _targetTrust =
+        (_faceConfidence * 0.4) +
+        (_keystrokeMatch * 0.4) +
+        (_activitySafety * 0.2);
+
+    // Determine risk level
+    if (_targetTrust >= 80) {
+      _trustRiskLevel = 'LOW';
+    } else if (_targetTrust >= 60) {
+      _trustRiskLevel = 'MEDIUM';
+    } else if (_targetTrust >= 40) {
+      _trustRiskLevel = 'HIGH';
+    } else {
+      _trustRiskLevel = 'CRITICAL';
+    }
+
+    notifyListeners();
+  }
+
+  String _getScenarioEventMessage(DemoScenario scenario) {
+    switch (scenario) {
+      case DemoScenario.identityMismatch:
+        return 'ALERT: Identity mismatch detected — face verification failed';
+      case DemoScenario.spoofingAttempt:
+        return 'CRITICAL: Spoofing attempt detected — photo/mask presentation';
+      case DemoScenario.keystrokeAnomaly:
+        return 'WARNING: Keystroke pattern anomaly — possible user switch';
+      case DemoScenario.phishingDetected:
+        return 'ALERT: Phishing URL detected in browser activity';
+      case DemoScenario.burnoutRisk:
+        return 'NOTICE: Elevated burnout risk — fatigue indicators detected';
+      case DemoScenario.normalOperation:
+        return 'INFO: System operating normally — all checks passed';
+    }
+  }
+
+  ThreatSeverity _getScenarioSeverity(DemoScenario scenario) {
+    switch (scenario) {
+      case DemoScenario.identityMismatch:
+      case DemoScenario.spoofingAttempt:
+        return ThreatSeverity.critical;
+      case DemoScenario.keystrokeAnomaly:
+      case DemoScenario.phishingDetected:
+        return ThreatSeverity.high;
+      case DemoScenario.burnoutRisk:
+        return ThreatSeverity.medium;
+      case DemoScenario.normalOperation:
+        return ThreatSeverity.low;
+    }
+  }
+
+  /// Update face confidence (can be called from face verification)
+  void updateFaceConfidence(
+    double confidence, {
+    bool matched = true,
+    bool spoofing = false,
+  }) {
+    _faceConfidence = confidence;
+    _cameraConfidence = confidence;
+    _currentFrame = FaceScanFrame(
+      confidence: confidence,
+      livenessScore: spoofing ? 15.0 : 95.0,
+      matched: matched,
+      spoofingAttempt: spoofing,
+      timestamp: DateTime.now(),
+      scanMode: spoofing ? 'ANTI_SPOOF' : 'CONTINUOUS',
+    );
+    _recalculateTrustScore();
+    notifyListeners();
+  }
+
+  /// Update keystroke match score
+  void updateKeystrokeMatch(double matchScore) {
+    _keystrokeMatch = matchScore;
+    _recalculateTrustScore();
+    notifyListeners();
+  }
+
+  /// Update activity safety score
+  void updateActivitySafety(double safetyScore) {
+    _activitySafety = safetyScore;
+    _recalculateTrustScore();
+    notifyListeners();
+  }
+
+  /// Recalculate trust score from components
+  void _recalculateTrustScore() {
+    _targetTrust =
+        (_faceConfidence * 0.4) +
+        (_keystrokeMatch * 0.4) +
+        (_activitySafety * 0.2);
+    _targetTrust = _targetTrust.clamp(0.0, 100.0);
+
+    if (_targetTrust >= 80) {
+      _trustRiskLevel = 'LOW';
+    } else if (_targetTrust >= 60) {
+      _trustRiskLevel = 'MEDIUM';
+    } else if (_targetTrust >= 40) {
+      _trustRiskLevel = 'HIGH';
+    } else {
+      _trustRiskLevel = 'CRITICAL';
+    }
   }
 
   void _initHeatmap() {
@@ -930,6 +1244,29 @@ class SentinelProvider extends ChangeNotifier {
     _heatmapTimer?.cancel();
     _emailTimer?.cancel();
     _faceService.dispose();
+    _apiPollTimer?.cancel();
+    _api.dispose();
     super.dispose();
   }
+}
+
+/// Demo scenarios for hackathon demonstration
+enum DemoScenario {
+  /// Face verification fails — unknown person
+  identityMismatch,
+
+  /// Photo/mask detected instead of real face
+  spoofingAttempt,
+
+  /// Typing pattern doesn't match enrolled user
+  keystrokeAnomaly,
+
+  /// Phishing URL detected in browser activity
+  phishingDetected,
+
+  /// Extended work hours, stress indicators
+  burnoutRisk,
+
+  /// Everything normal (reset scenario)
+  normalOperation,
 }
