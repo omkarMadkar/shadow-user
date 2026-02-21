@@ -7,6 +7,7 @@ import 'package:flutter/painting.dart';
 import 'package:path_provider/path_provider.dart';
 import '../models/models.dart';
 import '../services/face_verification_service.dart';
+import '../services/mongo_upload_service.dart';
 import '../services/api_service.dart';
 
 /// Central state management for the Shadow Sentinel dashboard.
@@ -443,7 +444,7 @@ class SentinelProvider extends ChangeNotifier {
   }
 
   /// Persist a face mismatch alert to a shared JSON file so the admin
-  /// dashboard can read it.
+  /// dashboard can read it, and upload to MongoDB Atlas.
   Future<void> _persistFaceAlert(FaceVerificationResult result) async {
     try {
       final dir = await getApplicationDocumentsDirectory();
@@ -468,6 +469,14 @@ class SentinelProvider extends ChangeNotifier {
       });
 
       await file.writeAsString(jsonEncode(alerts));
+
+      // Upload to MongoDB Atlas (fire-and-forget)
+      MongoUploadService.instance.uploadFaceAlert(
+        userEmail: _currentUserEmail,
+        confidence: result.confidence,
+        consecutiveMismatches: _consecutiveMismatches,
+        facePhotoPath: result.capturedImagePath,
+      );
     } catch (e) {
       debugPrint('[NeuralCamera] Failed to persist face alert: $e');
     }

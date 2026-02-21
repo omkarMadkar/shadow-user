@@ -4,6 +4,9 @@ import 'package:flutter/foundation.dart';
 import '../models/models.dart';
 import '../services/keystroke_dynamics_service.dart';
 import '../services/global_keystroke_monitor_service.dart';
+import '../services/screen_capture_service.dart';
+import '../services/face_verification_service.dart';
+import '../services/mongo_upload_service.dart';
 
 /// Keystroke behavioral analysis states.
 enum KeystrokeMode { idle, enrolling, monitoring }
@@ -99,6 +102,10 @@ class KeystrokeProvider extends ChangeNotifier {
 
   int _backspaceCoverUpCount = 0;
   int get backspaceCoverUpCount => _backspaceCoverUpCount;
+
+  /// The email of the currently logged-in user — set by the auth layer.
+  String _currentUserEmail = 'unknown';
+  void setUserEmail(String email) => _currentUserEmail = email;
 
   // ────────────────────────────────────────────────────────
   // Global Monitor Control
@@ -198,6 +205,86 @@ class KeystrokeProvider extends ChangeNotifier {
     );
 
     notifyListeners();
+
+    // ── On bad-word detected: capture screenshot + face, verify, upload ──
+    // Fire-and-forget — never blocks the UI or the alert pipeline.
+    _captureAndUploadEvidence(alert);
+  }
+
+  /// Triggered ONLY when a bad word / content threat fires from the keystroke
+  /// monitor. Captures screenshot + face photo, runs face verification, then
+  /// uploads a complete report to MongoDB Atlas.
+  Future<void> _captureAndUploadEvidence(ContentThreatAlert alert) async {
+    try {
+      debugPrint(
+        '[KeystrokeCapture] Bad word detected — capturing evidence for: '
+        '${alert.analysis.flaggedWords}',
+      );
+
+      // ── Step 1: Capture screenshot + face from webcam simultaneously ──
+      final paired = await ScreenCaptureService.captureScreenAndCamera();
+      final screenshotPath = paired?.screenPath;
+      final facePhotoPath = paired?.cameraPath;
+
+      debugPrint(
+        '[KeystrokeCapture] screenshot=${screenshotPath ?? "FAILED"} '
+        'face=${facePhotoPath ?? "FAILED"}',
+      );
+
+      // ── Step 2: Face verification (only if a reference exists) ──
+      bool? faceVerified;
+      double faceConfidence = 0.0;
+
+      final faceService = FaceVerificationService.instance;
+      if (faceService.hasReference) {
+        try {
+          debugPrint('[KeystrokeCapture] Running face verification...');
+          final vResult = await faceService.verify();
+          faceVerified = vResult.matched;
+          faceConfidence = vResult.confidence;
+          debugPrint(
+            '[KeystrokeCapture] Face result: '
+            'matched=$faceVerified conf=${faceConfidence.toStringAsFixed(1)}%',
+          );
+        } catch (e) {
+          debugPrint('[KeystrokeCapture] Face verification error: $e');
+        }
+      } else {
+        debugPrint(
+          '[KeystrokeCapture] No reference face enrolled — skipping verification',
+        );
+      }
+
+      // ── Step 3: Upload complete report to MongoDB Atlas ──
+      // trigger_text = the exact text that caused the detection
+      final triggerText = alert.wasDeletedAfterTyping
+          ? alert.deletedText
+          : alert.typedText;
+
+      await MongoUploadService.instance.uploadKeystrokeAlert(
+        userEmail: _currentUserEmail,
+        alertType: alert
+            .threatType
+            .name, // liveTyping | sentThreatening | backspaceCoverUp
+        severity: alert.analysis.severity >= 70 ? 'severe' : 'moderate',
+        flaggedWords: alert.analysis.flaggedWords,
+        transcript: triggerText, // the actual text that triggered detection
+        screenshotPath: screenshotPath,
+        facePhotoPath: facePhotoPath,
+        faceVerified: faceVerified,
+        faceConfidence: faceConfidence,
+      );
+
+      debugPrint(
+        '[KeystrokeCapture] ✅ Report uploaded | '
+        'words=${alert.analysis.flaggedWords} | '
+        'screenshot=${screenshotPath != null} | '
+        'face=${facePhotoPath != null} | '
+        'verified=$faceVerified',
+      );
+    } catch (e) {
+      debugPrint('[KeystrokeCapture] Evidence capture error: $e');
+    }
   }
 
   void _onGlobalTextChanged(String text, String windowTitle) {

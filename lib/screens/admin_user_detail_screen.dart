@@ -4,10 +4,12 @@ import 'dart:typed_data';
 
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import '../database/voice_database.dart';
+import '../services/mongo_upload_service.dart';
 import '../theme/sentinel_theme.dart';
 
 /// Per-user detail view — shows all sessions, alerts, transcripts
@@ -33,6 +35,10 @@ class _AdminUserDetailScreenState extends State<AdminUserDetailScreen>
   bool _loading = true;
   int _selectedTab = 0;
   Timer? _refreshTimer;
+
+  // MongoDB captures
+  List<Map<String, dynamic>> _mongoEvents = [];
+  bool _mongoLoading = false;
 
   // Audio playback
   final AudioPlayer _player = AudioPlayer();
@@ -312,6 +318,7 @@ class _AdminUserDetailScreenState extends State<AdminUserDetailScreen>
       ('ALERTS', Icons.warning_amber),
       ('TRANSCRIPTS', Icons.text_snippet),
       ('SESSIONS', Icons.history),
+      ('CAPTURES', Icons.camera_alt),
     ];
 
     return Container(
@@ -386,6 +393,8 @@ class _AdminUserDetailScreenState extends State<AdminUserDetailScreen>
         return _buildTranscriptsTab();
       case 3:
         return _buildSessionsTab();
+      case 4:
+        return _buildCapturesTab();
       default:
         return _buildOverviewTab();
     }
@@ -1377,6 +1386,380 @@ class _AdminUserDetailScreenState extends State<AdminUserDetailScreen>
   String _formatDate(DateTime dt) {
     return '${dt.day}/${dt.month}/${dt.year}';
   }
+  // ── Captures Tab (MongoDB) ───────────────────────────────
+
+  Future<void> _loadMongoCaptures() async {
+    setState(() => _mongoLoading = true);
+    try {
+      final events = await MongoUploadService.instance.fetchEventsForUser(
+        widget.user.email,
+      );
+      setState(() {
+        _mongoEvents = events;
+        _mongoLoading = false;
+      });
+    } catch (e) {
+      debugPrint('[AdminDetail] MongoDB fetch error: $e');
+      setState(() => _mongoLoading = false);
+    }
+  }
+
+  Widget _buildCapturesTab() {
+    // Lazily load on first view
+    if (!_mongoLoading && _mongoEvents.isEmpty) {
+      SchedulerBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _loadMongoCaptures();
+      });
+    }
+
+    if (_mongoLoading) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircularProgressIndicator(
+              color: SentinelTheme.cyberBlue,
+              strokeWidth: 2,
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'FETCHING FROM MONGODB ATLAS...',
+              style: SentinelTheme.mono.copyWith(
+                fontSize: 10,
+                color: SentinelTheme.textMuted,
+                letterSpacing: 1,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (_mongoEvents.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.cloud_off_outlined,
+              size: 48,
+              color: SentinelTheme.textMuted,
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'NO CAPTURES IN MONGODB',
+              style: SentinelTheme.mono.copyWith(
+                fontSize: 12,
+                color: SentinelTheme.textPrimary,
+                letterSpacing: 1.5,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Captures upload automatically when\nflagged speech or face mismatches are detected.',
+              textAlign: TextAlign.center,
+              style: SentinelTheme.sans.copyWith(
+                fontSize: 11,
+                color: SentinelTheme.textMuted,
+                height: 1.5,
+              ),
+            ),
+            const SizedBox(height: 16),
+            GestureDetector(
+              onTap: _loadMongoCaptures,
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 8,
+                ),
+                decoration: BoxDecoration(
+                  color: SentinelTheme.cyberBlue.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: SentinelTheme.cyberBlue.withValues(alpha: 0.3),
+                  ),
+                ),
+                child: Text(
+                  'REFRESH',
+                  style: SentinelTheme.mono.copyWith(
+                    fontSize: 11,
+                    color: SentinelTheme.cyberBlue,
+                    letterSpacing: 1,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Column(
+      children: [
+        // Header
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          decoration: BoxDecoration(
+            color: SentinelTheme.surface.withValues(alpha: 0.5),
+            border: Border(bottom: BorderSide(color: SentinelTheme.border)),
+          ),
+          child: Row(
+            children: [
+              Icon(
+                Icons.cloud_done_outlined,
+                size: 14,
+                color: SentinelTheme.alertGreen,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                '${_mongoEvents.length} CAPTURES FOUND IN MONGODB ATLAS',
+                style: SentinelTheme.mono.copyWith(
+                  fontSize: 10,
+                  color: SentinelTheme.textMuted,
+                  letterSpacing: 0.5,
+                ),
+              ),
+              const Spacer(),
+              GestureDetector(
+                onTap: _loadMongoCaptures,
+                child: Icon(
+                  Icons.refresh,
+                  size: 16,
+                  color: SentinelTheme.textMuted,
+                ),
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: ListView.builder(
+            padding: const EdgeInsets.all(16),
+            itemCount: _mongoEvents.length,
+            itemBuilder: (_, i) => _buildCaptureCard(_mongoEvents[i]),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildCaptureCard(Map<String, dynamic> event) {
+    final eventType = event['event_type'] as String? ?? '';
+    final alertType = event['alert_type'] as String? ?? '';
+    final severity = event['severity'] as String? ?? '';
+    final flaggedWords =
+        (event['flagged_words'] as List?)?.cast<String>() ?? [];
+    final transcript = event['transcript'] as String? ?? '';
+    final screenshotPath = event['screenshot_path'] as String? ?? '';
+    final facePath = event['face_path'] as String? ?? '';
+    final faceVerified = event['face_verified'];
+    final faceConf = (event['face_confidence'] as num?)?.toDouble() ?? 0.0;
+    final createdLocal = event['created_at_local'] as String? ?? '';
+    final docId = event['id'] as String? ?? '';
+
+    // nicely format timestamp
+    String displayTime = createdLocal;
+    try {
+      final dt = DateTime.parse(createdLocal);
+      final h = dt.hour.toString().padLeft(2, '0');
+      final m = dt.minute.toString().padLeft(2, '0');
+      final s = dt.second.toString().padLeft(2, '0');
+      displayTime =
+          '${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}/${dt.year}  $h:$m:$s';
+    } catch (_) {}
+
+    final bool isKeystroke = eventType == 'keystroke_alert';
+    final baseColor = isKeystroke
+        ? SentinelTheme.alertRed
+        : SentinelTheme.alertAmber;
+
+    Color verifyColor = SentinelTheme.textMuted;
+    String verifyLabel = 'NOT CHECKED';
+    IconData verifyIcon = Icons.help_outline;
+    if (faceVerified == true) {
+      verifyColor = SentinelTheme.alertGreen;
+      verifyLabel = 'SAME PERSON ✓';
+      verifyIcon = Icons.verified_user;
+    } else if (faceVerified == false) {
+      verifyColor = SentinelTheme.alertRed;
+      verifyLabel = 'MISMATCH ✗';
+      verifyIcon = Icons.gpp_bad_outlined;
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: SentinelTheme.surface,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: baseColor.withValues(alpha: 0.3)),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(10),
+        child: IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Container(width: 4, color: baseColor),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.all(14),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // ── Row 1: badges + timestamp ──
+                      Row(
+                        children: [
+                          _MiniBadge(
+                            label: isKeystroke ? 'VOICE' : 'FACE',
+                            color: baseColor,
+                          ),
+                          const SizedBox(width: 6),
+                          if (alertType.isNotEmpty)
+                            _MiniBadge(
+                              label: alertType.toUpperCase(),
+                              color: baseColor,
+                            ),
+                          if (severity.isNotEmpty) ...[
+                            const SizedBox(width: 6),
+                            _MiniBadge(
+                              label: severity.toUpperCase(),
+                              color: _severityColor(severity),
+                            ),
+                          ],
+                          const Spacer(),
+                          Text(
+                            displayTime,
+                            style: SentinelTheme.mono.copyWith(
+                              fontSize: 9,
+                              color: SentinelTheme.textMuted,
+                            ),
+                          ),
+                        ],
+                      ),
+
+                      const SizedBox(height: 8),
+
+                      // ── Row 2: Face verification result ──
+                      Row(
+                        children: [
+                          Icon(verifyIcon, size: 13, color: verifyColor),
+                          const SizedBox(width: 5),
+                          Text(
+                            'FACE: $verifyLabel',
+                            style: SentinelTheme.mono.copyWith(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                              color: verifyColor,
+                            ),
+                          ),
+                          if (faceConf > 0) ...[
+                            const SizedBox(width: 8),
+                            Text(
+                              '${faceConf.toStringAsFixed(1)}% conf',
+                              style: SentinelTheme.mono.copyWith(
+                                fontSize: 9,
+                                color: SentinelTheme.textMuted,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+
+                      // ── Flagged words ──
+                      if (flaggedWords.isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 5,
+                          runSpacing: 4,
+                          children: flaggedWords
+                              .take(5)
+                              .map(
+                                (w) => Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 7,
+                                    vertical: 2,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: SentinelTheme.alertRed.withValues(
+                                      alpha: 0.1,
+                                    ),
+                                    borderRadius: BorderRadius.circular(20),
+                                    border: Border.all(
+                                      color: SentinelTheme.alertRed.withValues(
+                                        alpha: 0.3,
+                                      ),
+                                    ),
+                                  ),
+                                  child: Text(
+                                    '"$w"',
+                                    style: SentinelTheme.mono.copyWith(
+                                      fontSize: 9,
+                                      color: SentinelTheme.alertRed,
+                                    ),
+                                  ),
+                                ),
+                              )
+                              .toList(),
+                        ),
+                      ],
+
+                      // ── Evidence thumbnails ──
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          _buildEvidenceThumb(
+                            context,
+                            path: screenshotPath.isNotEmpty
+                                ? screenshotPath
+                                : null,
+                            label: 'SCREEN',
+                            icon: Icons.screenshot_monitor,
+                            color: SentinelTheme.cyberBlue,
+                          ),
+                          const SizedBox(width: 8),
+                          _buildEvidenceThumb(
+                            context,
+                            path: facePath.isNotEmpty ? facePath : null,
+                            label: 'FACE',
+                            icon: Icons.face_retouching_natural,
+                            color: SentinelTheme.cyberCyan,
+                          ),
+                        ],
+                      ),
+
+                      // ── Transcript ──
+                      if (transcript.isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        Text(
+                          transcript,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: SentinelTheme.sans.copyWith(
+                            fontSize: 11,
+                            color: SentinelTheme.textSecondary,
+                            height: 1.4,
+                          ),
+                        ),
+                      ],
+
+                      // ── Doc ID ──
+                      const SizedBox(height: 6),
+                      Text(
+                        'mongo: $docId',
+                        style: SentinelTheme.mono.copyWith(
+                          fontSize: 8,
+                          color: SentinelTheme.textMuted.withValues(alpha: 0.5),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 // ─── Stat Card Widget ──────────────────────────────────────
@@ -1431,6 +1814,36 @@ class _StatCard extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+// ─── Mini Badge Widget ─────────────────────────────────────
+
+class _MiniBadge extends StatelessWidget {
+  final String label;
+  final Color color;
+
+  const _MiniBadge({required this.label, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(color: color.withValues(alpha: 0.4)),
+      ),
+      child: Text(
+        label,
+        style: SentinelTheme.mono.copyWith(
+          fontSize: 9,
+          fontWeight: FontWeight.w700,
+          color: color,
+          letterSpacing: 0.5,
+        ),
       ),
     );
   }
