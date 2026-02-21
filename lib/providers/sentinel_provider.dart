@@ -291,15 +291,60 @@ class SentinelProvider extends ChangeNotifier {
   }
 
   /// Run a single face verification check.
+  /// Re-captures the reference face first, then verifies all future
+  /// images against this new reference.
   Future<FaceVerificationResult?> runSingleVerification() async {
-    if (!hasReferenceFace) return null;
-
     _isVerifying = true;
     _currentFrame = FaceScanFrame(
       confidence: _currentFrame.confidence,
       livenessScore: _currentFrame.livenessScore,
       matched: _currentFrame.matched,
       spoofingAttempt: _currentFrame.spoofingAttempt,
+      timestamp: DateTime.now(),
+      scanMode: 'ENROLLING',
+    );
+    notifyListeners();
+
+    // 1. Re-capture a fresh reference face
+    final refPath = await _faceService.captureReferenceFace();
+    if (refPath == null) {
+      _isVerifying = false;
+      _addCameraLog(
+        confidence: 0,
+        liveness: 0,
+        matched: false,
+        spoofing: false,
+        detail: 'Reference face re-capture failed — camera unavailable',
+      );
+      notifyListeners();
+      return null;
+    }
+
+    _addCameraLog(
+      confidence: 100,
+      liveness: 100,
+      matched: true,
+      spoofing: false,
+      detail:
+          'New reference face captured — all future verifications use this baseline',
+    );
+    _consecutiveMismatches = 0; // Reset mismatches for new reference
+    _currentFrame = FaceScanFrame(
+      confidence: 100,
+      livenessScore: 100,
+      matched: true,
+      spoofingAttempt: false,
+      timestamp: DateTime.now(),
+      scanMode: 'ENROLLED',
+    );
+    notifyListeners();
+
+    // 2. Immediately run a verification against the new reference
+    _currentFrame = FaceScanFrame(
+      confidence: 100,
+      livenessScore: 100,
+      matched: true,
+      spoofingAttempt: false,
       timestamp: DateTime.now(),
       scanMode: 'SCANNING',
     );
@@ -308,6 +353,13 @@ class SentinelProvider extends ChangeNotifier {
     final result = await _faceService.verify();
     _processVerificationResult(result);
     _isVerifying = false;
+
+    // 3. Restart periodic verification with the new reference
+    if (_neuralScanActive) {
+      stopRealVerification();
+      startRealVerification();
+    }
+
     notifyListeners();
     return result;
   }

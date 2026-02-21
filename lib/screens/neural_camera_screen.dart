@@ -230,9 +230,9 @@ class _NeuralCameraHeader extends StatelessWidget {
 
           const SizedBox(width: 16),
 
-          // Verify Now button
+          // Verify Now button — re-captures reference face, then verifies
           GestureDetector(
-            onTap: provider.isVerifying || !provider.hasReferenceFace
+            onTap: provider.isVerifying
                 ? null
                 : () => provider.runSingleVerification(),
             child: Container(
