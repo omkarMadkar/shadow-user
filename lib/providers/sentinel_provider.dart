@@ -225,6 +225,87 @@ class SentinelProvider extends ChangeNotifier {
   String get currentUserEmail => _currentUserEmail;
   set currentUserEmail(String email) => _currentUserEmail = email;
 
+  // ── Keystroke-Triggered Camera Events ────────────────────
+  /// Events triggered when the keystroke monitor detects bad words
+  /// and the neural camera captures + verifies the user.
+  final List<KeystrokeCameraTrigger> _keystrokeTriggers = [];
+  List<KeystrokeCameraTrigger> get keystrokeTriggers =>
+      List.unmodifiable(_keystrokeTriggers);
+
+  /// Called by [KeystrokeProvider] when bad words trigger a camera capture
+  /// and face verification. Updates the neural camera state so the UI
+  /// reflects the keystroke-triggered verification in real time.
+  void onKeystrokeThreatCapture({
+    required List<String> flaggedWords,
+    required String triggerText,
+    required String alertType,
+    bool? faceVerified,
+    double faceConfidence = 0.0,
+    String? screenshotPath,
+    String? facePhotoPath,
+  }) {
+    final trigger = KeystrokeCameraTrigger(
+      flaggedWords: flaggedWords,
+      triggerText: triggerText,
+      alertType: alertType,
+      faceVerified: faceVerified,
+      faceConfidence: faceConfidence,
+      screenshotPath: screenshotPath,
+      facePhotoPath: facePhotoPath,
+      timestamp: DateTime.now(),
+    );
+    _keystrokeTriggers.insert(0, trigger);
+    if (_keystrokeTriggers.length > 20) _keystrokeTriggers.removeLast();
+
+    // Update neural camera current frame with keystroke-triggered result
+    _totalFramesAnalyzed++;
+    if (facePhotoPath != null) {
+      _lastVerificationImagePath = facePhotoPath;
+    }
+
+    final scanMode = faceVerified == true
+        ? 'KEYSTROKE_MATCH'
+        : faceVerified == false
+            ? 'KEYSTROKE_MISMATCH'
+            : 'KEYSTROKE_NOCAM';
+
+    _currentFrame = FaceScanFrame(
+      confidence: faceConfidence,
+      livenessScore: faceVerified == true ? 95 : 0,
+      matched: faceVerified ?? false,
+      spoofingAttempt: false,
+      timestamp: DateTime.now(),
+      scanMode: scanMode,
+    );
+
+    // Update running average
+    if (faceConfidence > 0) {
+      if (_avgConfidence == 0) {
+        _avgConfidence = faceConfidence;
+      } else {
+        _avgConfidence = _avgConfidence * 0.85 + faceConfidence * 0.15;
+      }
+    }
+
+    _addCameraLog(
+      confidence: faceConfidence,
+      liveness: faceVerified == true ? 95 : 0,
+      matched: faceVerified ?? false,
+      spoofing: false,
+      detail:
+          '⌨️ KEYSTROKE TRIGGER: [${flaggedWords.join(", ")}] detected — '
+          'face ${faceVerified == true ? "MATCHED" : faceVerified == false ? "MISMATCH" : "N/A"} '
+          '(${faceConfidence.toStringAsFixed(1)}%)',
+    );
+
+    debugPrint(
+      '[NeuralCamera] Keystroke trigger: words=${flaggedWords} '
+      'verified=$faceVerified conf=$faceConfidence',
+    );
+
+    notifyListeners();
+  }
+
   FaceScanFrame _currentFrame = FaceScanFrame(
     confidence: 0,
     livenessScore: 0,

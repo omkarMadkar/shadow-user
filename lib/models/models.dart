@@ -491,3 +491,28 @@ class KeystrokeAlert {
     required this.severity,
   });
 }
+
+/// Represents a camera capture triggered by keystroke bad-word detection.
+/// Stored by [SentinelProvider] and displayed in the Neural Camera screen
+/// and the Admin captures panel.
+class KeystrokeCameraTrigger {
+  final List<String> flaggedWords;
+  final String triggerText;
+  final String alertType; // liveTyping | sentThreatening | backspaceCoverUp
+  final bool? faceVerified;
+  final double faceConfidence;
+  final String? screenshotPath;
+  final String? facePhotoPath;
+  final DateTime timestamp;
+
+  const KeystrokeCameraTrigger({
+    required this.flaggedWords,
+    required this.triggerText,
+    required this.alertType,
+    required this.faceVerified,
+    required this.faceConfidence,
+    this.screenshotPath,
+    this.facePhotoPath,
+    required this.timestamp,
+  });
+}

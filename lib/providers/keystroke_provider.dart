@@ -7,6 +7,7 @@ import '../services/global_keystroke_monitor_service.dart';
 import '../services/screen_capture_service.dart';
 import '../services/face_verification_service.dart';
 import '../services/mongo_upload_service.dart';
+import '../providers/sentinel_provider.dart';
 
 /// Keystroke behavioral analysis states.
 enum KeystrokeMode { idle, enrolling, monitoring }
@@ -106,6 +107,13 @@ class KeystrokeProvider extends ChangeNotifier {
   /// The email of the currently logged-in user — set by the auth layer.
   String _currentUserEmail = 'unknown';
   void setUserEmail(String email) => _currentUserEmail = email;
+
+  /// Reference to the SentinelProvider so keystroke threats can
+  /// push camera verification results to the neural camera screen.
+  SentinelProvider? _sentinelProvider;
+  void setSentinelProvider(SentinelProvider provider) {
+    _sentinelProvider = provider;
+  }
 
   // ────────────────────────────────────────────────────────
   // Global Monitor Control
@@ -281,6 +289,18 @@ class KeystrokeProvider extends ChangeNotifier {
         'screenshot=${screenshotPath != null} | '
         'face=${facePhotoPath != null} | '
         'verified=$faceVerified',
+      );
+
+      // ── Step 4: Notify Neural Camera (SentinelProvider) ──
+      // Push the result to the neural camera so it updates live.
+      _sentinelProvider?.onKeystrokeThreatCapture(
+        flaggedWords: alert.analysis.flaggedWords,
+        triggerText: triggerText,
+        alertType: alert.threatType.name,
+        faceVerified: faceVerified,
+        faceConfidence: faceConfidence,
+        screenshotPath: screenshotPath,
+        facePhotoPath: facePhotoPath,
       );
     } catch (e) {
       debugPrint('[KeystrokeCapture] Evidence capture error: $e');
