@@ -1572,20 +1572,20 @@ class _AdminUserDetailScreenState extends State<AdminUserDetailScreen>
     final baseColor = isKeystroke
         ? const Color(0xFFF59E0B) // amber for keystroke
         : isFaceAlert
-            ? SentinelTheme.alertRed
-            : SentinelTheme.cyberCyan;
+        ? SentinelTheme.alertRed
+        : SentinelTheme.cyberCyan;
 
     // Determine the event source label
     final String sourceLabel = isKeystroke
         ? 'KEYSTROKE'
         : isFaceAlert
-            ? 'FACE'
-            : 'VOICE';
+        ? 'FACE'
+        : 'VOICE';
     final IconData sourceIcon = isKeystroke
         ? Icons.keyboard_alt_outlined
         : isFaceAlert
-            ? Icons.face_retouching_natural
-            : Icons.mic;
+        ? Icons.face_retouching_natural
+        : Icons.mic;
 
     Color verifyColor = SentinelTheme.textMuted;
     String verifyLabel = 'NOT CHECKED';
@@ -1647,10 +1647,7 @@ class _AdminUserDetailScreenState extends State<AdminUserDetailScreen>
                   _MiniBadge(label: sourceLabel, color: baseColor),
                   const SizedBox(width: 6),
                   if (alertDisplayLabel.isNotEmpty)
-                    _MiniBadge(
-                      label: alertDisplayLabel,
-                      color: baseColor,
-                    ),
+                    _MiniBadge(label: alertDisplayLabel, color: baseColor),
                   if (severity.isNotEmpty) ...[
                     const SizedBox(width: 6),
                     _MiniBadge(
@@ -1695,8 +1692,8 @@ class _AdminUserDetailScreenState extends State<AdminUserDetailScreen>
                             value: faceVerified == true
                                 ? '${faceConf.toStringAsFixed(0)}%'
                                 : faceVerified == false
-                                    ? 'FAIL'
-                                    : 'N/A',
+                                ? 'FAIL'
+                                : 'N/A',
                             color: verifyColor,
                             status: verifyLabel,
                           ),
@@ -1928,19 +1925,14 @@ class _AdminUserDetailScreenState extends State<AdminUserDetailScreen>
       decoration: BoxDecoration(
         color: SentinelTheme.bg.withValues(alpha: 0.5),
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(
-          color: color.withValues(alpha: 0.2),
-        ),
+        border: Border.all(color: color.withValues(alpha: 0.2)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Label header
           Container(
-            padding: const EdgeInsets.symmetric(
-              horizontal: 8,
-              vertical: 5,
-            ),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
             decoration: BoxDecoration(
               color: color.withValues(alpha: 0.08),
               borderRadius: const BorderRadius.only(
@@ -2019,11 +2011,7 @@ class _AdminUserDetailScreenState extends State<AdminUserDetailScreen>
                 child: Container(
                   padding: const EdgeInsets.all(6),
                   color: Colors.black54,
-                  child: const Icon(
-                    Icons.close,
-                    size: 16,
-                    color: Colors.white,
-                  ),
+                  child: const Icon(Icons.close, size: 16, color: Colors.white),
                 ),
               ),
             ),

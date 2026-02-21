@@ -266,8 +266,8 @@ class SentinelProvider extends ChangeNotifier {
     final scanMode = faceVerified == true
         ? 'KEYSTROKE_MATCH'
         : faceVerified == false
-            ? 'KEYSTROKE_MISMATCH'
-            : 'KEYSTROKE_NOCAM';
+        ? 'KEYSTROKE_MISMATCH'
+        : 'KEYSTROKE_NOCAM';
 
     _currentFrame = FaceScanFrame(
       confidence: faceConfidence,
@@ -294,7 +294,11 @@ class SentinelProvider extends ChangeNotifier {
       spoofing: false,
       detail:
           '⌨️ KEYSTROKE TRIGGER: [${flaggedWords.join(", ")}] detected — '
-          'face ${faceVerified == true ? "MATCHED" : faceVerified == false ? "MISMATCH" : "N/A"} '
+          'face ${faceVerified == true
+              ? "MATCHED"
+              : faceVerified == false
+              ? "MISMATCH"
+              : "N/A"} '
           '(${faceConfidence.toStringAsFixed(1)}%)',
     );
 

@@ -926,8 +926,8 @@ class _KeystrokeTriggerPanel extends StatelessWidget {
     final alertColor = trigger.alertType == 'backspaceCoverUp'
         ? SentinelTheme.alertRed
         : trigger.alertType == 'sentThreatening'
-            ? const Color(0xFFFF6B6B)
-            : SentinelTheme.alertAmber;
+        ? const Color(0xFFFF6B6B)
+        : SentinelTheme.alertAmber;
 
     return Container(
       margin: const EdgeInsets.fromLTRB(12, 0, 12, 8),
@@ -935,9 +935,7 @@ class _KeystrokeTriggerPanel extends StatelessWidget {
       decoration: BoxDecoration(
         color: SentinelTheme.surface,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(
-          color: alertColor.withValues(alpha: 0.2),
-        ),
+        border: Border.all(color: alertColor.withValues(alpha: 0.2)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -949,8 +947,8 @@ class _KeystrokeTriggerPanel extends StatelessWidget {
                 trigger.alertType == 'backspaceCoverUp'
                     ? 'COVER-UP'
                     : trigger.alertType == 'sentThreatening'
-                        ? 'SENT'
-                        : 'LIVE',
+                    ? 'SENT'
+                    : 'LIVE',
                 alertColor,
               ),
               const SizedBox(width: 6),
