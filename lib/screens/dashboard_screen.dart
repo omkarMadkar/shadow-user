@@ -4,9 +4,12 @@ import '../widgets/sentinel_status_card.dart';
 import '../widgets/event_log_terminal.dart';
 import '../widgets/productivity_heatmap.dart';
 import '../widgets/threat_overview_panel.dart';
+import '../widgets/demo_control_panel.dart';
 
 /// Main dashboard screen — assembles all widgets in a responsive grid.
 /// Header and footer are now managed by MainShell.
+/// 
+/// Now includes Demo Control Panel for hackathon demonstrations.
 class DashboardScreen extends StatelessWidget {
   const DashboardScreen({super.key});
 
@@ -31,7 +34,7 @@ class DashboardScreen extends StatelessWidget {
   Widget _wideLayout() {
     return Column(
       children: [
-        // Top row: Trust Gauge | Sentinel Status | Threats
+        // Top row: Trust Gauge | Sentinel Status | Demo Control
         IntrinsicHeight(
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -48,32 +51,38 @@ class DashboardScreen extends StatelessWidget {
                 child: const SentinelStatusCard(),
               ),
               const SizedBox(width: 16),
-              // Threats + Users
+              // Demo Control Panel (replaces Threats in wide layout for demo)
               Expanded(
                 flex: 4,
-                child: const ThreatOverviewPanel(),
+                child: const DemoControlPanel(),
               ),
             ],
           ),
         ),
         const SizedBox(height: 16),
-        // Bottom row: Heatmap | Event Log
+        // Middle row: Threats + Users | Event Log
         SizedBox(
-          height: 420,
+          height: 280,
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Expanded(
-                flex: 7,
-                child: const ProductivityHeatmapWidget(),
+                flex: 5,
+                child: const ThreatOverviewPanel(),
               ),
               const SizedBox(width: 16),
               Expanded(
-                flex: 5,
+                flex: 7,
                 child: const EventLogTerminal(),
               ),
             ],
           ),
+        ),
+        const SizedBox(height: 16),
+        // Bottom row: Productivity Heatmap (full width)
+        const SizedBox(
+          height: 340,
+          child: ProductivityHeatmapWidget(),
         ),
       ],
     );
@@ -83,6 +92,9 @@ class DashboardScreen extends StatelessWidget {
     return Column(
       children: [
         const TrustGaugeWidget(),
+        const SizedBox(height: 16),
+        // Demo Control Panel at the top for easy access on mobile
+        const DemoControlPanel(),
         const SizedBox(height: 16),
         const SentinelStatusCard(),
         const SizedBox(height: 16),

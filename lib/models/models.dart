@@ -416,3 +416,78 @@ class ThreatReport {
     this.facePhotoPath,
   });
 }
+
+// ─── Keystroke Snapshot ──────────────────────────────────────
+
+/// A single point-in-time capture of typing timing metrics.
+class KeystrokeSnapshot {
+  final double avgDwellTimeMs;
+  final double avgFlightTimeMs;
+  final double wpm;
+  final double anomalyScore; // 0.0 = match, 1.0 = mismatch
+  final int keyCount;
+  final DateTime timestamp;
+
+  const KeystrokeSnapshot({
+    required this.avgDwellTimeMs,
+    required this.avgFlightTimeMs,
+    required this.wpm,
+    required this.anomalyScore,
+    required this.keyCount,
+    required this.timestamp,
+  });
+}
+
+// ─── Keystroke Baseline ──────────────────────────────────────
+
+/// The enrolled typing profile used as reference for anomaly detection.
+class KeystrokeBaseline {
+  final double meanDwellMs;
+  final double stdDwellMs;
+  final double meanFlightMs;
+  final double stdFlightMs;
+  final double meanWpm;
+  final int totalSamples;
+  final DateTime enrolledAt;
+
+  const KeystrokeBaseline({
+    required this.meanDwellMs,
+    required this.stdDwellMs,
+    required this.meanFlightMs,
+    required this.stdFlightMs,
+    required this.meanWpm,
+    required this.totalSamples,
+    required this.enrolledAt,
+  });
+}
+
+// ─── Keystroke Alert ─────────────────────────────────────────
+
+enum KeystrokeAlertType {
+  patternDrift,
+  possibleSwitch,
+  anomalySpike,
+  enrollmentComplete,
+  baselineReset,
+  contentThreat,
+  backspaceCoverUp,
+  sentThreatening,
+}
+
+class KeystrokeAlert {
+  final String id;
+  final KeystrokeAlertType alertType;
+  final String message;
+  final double anomalyScore;
+  final DateTime timestamp;
+  final ThreatSeverity severity;
+
+  const KeystrokeAlert({
+    required this.id,
+    required this.alertType,
+    required this.message,
+    required this.anomalyScore,
+    required this.timestamp,
+    required this.severity,
+  });
+}
