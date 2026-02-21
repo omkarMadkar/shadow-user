@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 import '../models/models.dart';
 import '../services/keystroke_dynamics_service.dart';
+import '../services/global_keystroke_monitor_service.dart';
 
 /// Keystroke behavioral analysis states.
 enum KeystrokeMode { idle, enrolling, monitoring }
@@ -74,6 +75,144 @@ class KeystrokeProvider extends ChangeNotifier {
   Timer? _snapshotTimer;
 
   KeystrokeDynamicsService get service => _service;
+
+  // ── Global OS-level Monitor ───────────────────────────────
+  final GlobalKeystrokeMonitorService _globalMonitor =
+      GlobalKeystrokeMonitorService();
+  GlobalKeystrokeMonitorService get globalMonitor => _globalMonitor;
+
+  bool _globalMonitorActive = false;
+  bool get globalMonitorActive => _globalMonitorActive;
+
+  final List<ContentThreatAlert> _contentThreats = [];
+  List<ContentThreatAlert> get contentThreats =>
+      List.unmodifiable(_contentThreats);
+
+  String _currentTypedText = '';
+  String get currentTypedText => _currentTypedText;
+
+  String _currentForegroundApp = '';
+  String get currentForegroundApp => _currentForegroundApp;
+
+  final List<SentPhrase> _sentPhrases = [];
+  List<SentPhrase> get sentPhrases => List.unmodifiable(_sentPhrases);
+
+  int _backspaceCoverUpCount = 0;
+  int get backspaceCoverUpCount => _backspaceCoverUpCount;
+
+  // ────────────────────────────────────────────────────────
+  // Global Monitor Control
+  // ────────────────────────────────────────────────────────
+
+  /// Start OS-level global keyboard monitoring.
+  Future<bool> startGlobalMonitor() async {
+    _globalMonitor.onThreatDetected = _onContentThreat;
+    _globalMonitor.onTextChanged = _onGlobalTextChanged;
+    _globalMonitor.onPhraseSent = _onGlobalPhraseSent;
+    _globalMonitor.onKeyEvent = _onGlobalKeyEvent;
+
+    final success = await _globalMonitor.startHook();
+    _globalMonitorActive = success;
+    if (success) {
+      _addLog('GLOBAL', 'OS-level keystroke monitor activated');
+      _addAlert(
+        KeystrokeAlertType.enrollmentComplete,
+        'Global keystroke threat monitor is now active',
+        0.0,
+        ThreatSeverity.low,
+      );
+    } else {
+      _addLog('GLOBAL', 'Failed to start OS-level monitor');
+    }
+    notifyListeners();
+    return success;
+  }
+
+  /// Stop OS-level global keyboard monitoring.
+  Future<void> stopGlobalMonitor() async {
+    await _globalMonitor.stopHook();
+    _globalMonitorActive = false;
+    _addLog('GLOBAL', 'OS-level keystroke monitor deactivated');
+    notifyListeners();
+  }
+
+  void _onContentThreat(ContentThreatAlert alert) {
+    _contentThreats.insert(0, alert);
+    if (_contentThreats.length > 30) _contentThreats.removeLast();
+
+    // Map to keystroke alert type
+    KeystrokeAlertType alertType;
+    ThreatSeverity severity;
+    String message;
+
+    switch (alert.threatType) {
+      case ContentThreatType.backspaceCoverUp:
+        alertType = KeystrokeAlertType.backspaceCoverUp;
+        severity = ThreatSeverity.critical;
+        _backspaceCoverUpCount++;
+        message =
+            '🚨 COVER-UP: User typed "${_truncate(alert.deletedText, 40)}" '
+            'then deleted it in [${_truncateApp(alert.foregroundApp)}] — '
+            '${alert.analysis.alertType} detected';
+        break;
+      case ContentThreatType.sentThreatening:
+        alertType = KeystrokeAlertType.sentThreatening;
+        severity = ThreatSeverity.critical;
+        message =
+            '⚠️ SENT: Threatening content sent in [${_truncateApp(alert.foregroundApp)}] — '
+            '"${_truncate(alert.typedText, 50)}"';
+        break;
+      case ContentThreatType.liveTyping:
+        alertType = KeystrokeAlertType.contentThreat;
+        severity = alert.analysis.severity >= 70
+            ? ThreatSeverity.high
+            : ThreatSeverity.medium;
+        message =
+            '🔴 TYPING: ${alert.analysis.alertType} detected in [${_truncateApp(alert.foregroundApp)}] — '
+            'severity ${alert.analysis.severity}%';
+        break;
+    }
+
+    _addAlert(alertType, message, alert.analysis.severity / 100.0, severity);
+    _addLog(
+      'THREAT',
+      '${alert.threatType.name}: ${alert.analysis.flaggedWords.join(", ")} in ${_truncateApp(alert.foregroundApp)}',
+    );
+
+    notifyListeners();
+  }
+
+  void _onGlobalTextChanged(String text, String windowTitle) {
+    _currentTypedText = text;
+    _currentForegroundApp = windowTitle;
+    notifyListeners();
+  }
+
+  void _onGlobalPhraseSent(SentPhrase phrase) {
+    _sentPhrases.insert(0, phrase);
+    if (_sentPhrases.length > 50) _sentPhrases.removeLast();
+
+    _addLog(
+      'SENT',
+      '${phrase.isThreatening ? "⚠️ " : "✓ "}[${_truncateApp(phrase.foregroundApp)}] "${_truncate(phrase.text, 60)}"',
+    );
+
+    notifyListeners();
+  }
+
+  void _onGlobalKeyEvent(GlobalKeyEvent event) {
+    // Can be used for additional per-key processing if needed
+  }
+
+  String _truncate(String text, int maxLen) {
+    if (text.length <= maxLen) return text;
+    return '${text.substring(0, maxLen)}...';
+  }
+
+  String _truncateApp(String appTitle) {
+    if (appTitle.length <= 30) return appTitle;
+    return '${appTitle.substring(0, 30)}...';
+  }
 
   // ────────────────────────────────────────────────────────
   // Enrollment
@@ -399,6 +538,7 @@ class KeystrokeProvider extends ChangeNotifier {
   void dispose() {
     _snapshotTimer?.cancel();
     _demoTimer?.cancel();
+    _globalMonitor.dispose();
     super.dispose();
   }
 }

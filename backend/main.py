@@ -19,7 +19,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 # Import route modules
-from routes import face, keystroke, threat
+from routes import face, keystroke, threat, content
 
 # ─── Logging Setup ────────────────────────────────────────────
 logging.basicConfig(
@@ -44,6 +44,7 @@ async def lifespan(app: FastAPI):
     logger.info("  POST /api/keystroke/analyze  — Keystroke analysis")
     logger.info("  POST /api/keystroke/enroll   — Keystroke enrollment")
     logger.info("  POST /api/threat/detect      — Threat detection")
+    logger.info("  POST /api/content/analyze    — Content threat analysis")
     logger.info("  POST /api/trust/score        — Trust score calculation")
     logger.info("  GET  /health                 — Health check")
     logger.info("=" * 60)
@@ -116,6 +117,7 @@ async def health_check():
             "face_verification": "online",
             "keystroke_analysis": "online",
             "threat_detection": "online",
+            "content_analysis": "online",
         },
     }
 
@@ -134,6 +136,7 @@ async def root():
             "keystroke_analyze": "POST /api/keystroke/analyze",
             "keystroke_enroll": "POST /api/keystroke/enroll",
             "threat_detect": "POST /api/threat/detect",
+            "content_analyze": "POST /api/content/analyze",
             "trust_score": "POST /api/trust/score",
             "health": "GET /health",
         },
@@ -144,6 +147,7 @@ async def root():
 app.include_router(face.router, prefix="/api/face", tags=["Face Verification"])
 app.include_router(keystroke.router, prefix="/api/keystroke", tags=["Keystroke Analysis"])
 app.include_router(threat.router, prefix="/api/threat", tags=["Threat Detection"])
+app.include_router(content.router, prefix="/api/content", tags=["Content Analysis"])
 
 
 # ─── Trust Score Endpoint (Unified) ───────────────────────────

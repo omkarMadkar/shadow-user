@@ -8,6 +8,7 @@ import '../widgets/keystroke_pattern_chart.dart';
 import '../widgets/keystroke_enrollment_widget.dart';
 import '../widgets/keystroke_alert_card.dart';
 import '../widgets/keystroke_log_widget.dart';
+import '../widgets/content_threat_panel.dart';
 
 /// Full Keystroke Sentinel screen with real-time key capture.
 class KeystrokeSentinelScreen extends StatefulWidget {
@@ -24,9 +25,14 @@ class _KeystrokeSentinelScreenState extends State<KeystrokeSentinelScreen> {
   @override
   void initState() {
     super.initState();
-    // Request focus immediately so we can capture keys
+    // Request focus and auto-start global keystroke monitor
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _focusNode.requestFocus();
+      // Auto-start global OS-level keystroke monitor
+      final kp = context.read<KeystrokeProvider>();
+      if (!kp.globalMonitorActive) {
+        kp.startGlobalMonitor();
+      }
     });
   }
 
@@ -121,6 +127,10 @@ class _KeystrokeSentinelScreenState extends State<KeystrokeSentinelScreen> {
             ],
           ),
         ),
+        const SizedBox(height: 16),
+
+        // Content Threat Monitor (OS-level)
+        const SizedBox(height: 350, child: ContentThreatPanel()),
       ],
     );
   }
@@ -141,6 +151,8 @@ class _KeystrokeSentinelScreenState extends State<KeystrokeSentinelScreen> {
         const SizedBox(height: 280, child: KeystrokeAlertCard()),
         const SizedBox(height: 16),
         const SizedBox(height: 280, child: KeystrokeLogWidget()),
+        const SizedBox(height: 16),
+        const SizedBox(height: 350, child: ContentThreatPanel()),
       ],
     );
   }

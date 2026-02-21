@@ -433,6 +433,9 @@ enum KeystrokeAlertType {
   anomalySpike,
   enrollmentComplete,
   baselineReset,
+  contentThreat,
+  backspaceCoverUp,
+  sentThreatening,
 }
 
 class KeystrokeAlert {

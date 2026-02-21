@@ -130,6 +130,12 @@ class _AlertTile extends StatelessWidget {
         return Icons.verified;
       case KeystrokeAlertType.baselineReset:
         return Icons.restart_alt;
+      case KeystrokeAlertType.contentThreat:
+        return Icons.warning_amber;
+      case KeystrokeAlertType.backspaceCoverUp:
+        return Icons.backspace;
+      case KeystrokeAlertType.sentThreatening:
+        return Icons.send;
     }
   }
 
