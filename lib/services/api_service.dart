@@ -29,7 +29,7 @@ class ApiService {
   bool _isConnected = false;
   bool get isConnected => _isConnected;
 
-  DateTime? _lastHealthCheck;
+  DateTime? _lastHealthCheck; // ignore: unused_field
 
   ApiService({String? baseUrl})
     : baseUrl = baseUrl ?? _defaultBaseUrl,

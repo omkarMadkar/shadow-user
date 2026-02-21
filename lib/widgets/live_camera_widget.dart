@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:camera/camera.dart';
 import '../theme/sentinel_theme.dart';
 import '../providers/sentinel_provider.dart';
 import '../services/api_service.dart';

@@ -140,7 +140,7 @@ class KeystrokeEnrollmentWidget extends StatelessWidget {
                         label: 'START ENROLLMENT',
                         icon: Icons.play_arrow,
                         color: SentinelTheme.cyberBlue,
-                        onTap: () => p.startEnrollment(),
+                        onTap: () {},  // enrollment removed
                       ),
                     ],
                   ),
