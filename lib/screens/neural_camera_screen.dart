@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../models/models.dart';
 import '../providers/sentinel_provider.dart';
 import '../theme/sentinel_theme.dart';
 import '../widgets/face_scan_widget.dart';
@@ -91,6 +92,11 @@ class _NeuralCameraScreenState extends State<NeuralCameraScreen> {
           height: 400,
           child: CameraLogWidget(logs: provider.cameraLogs),
         ),
+        // Keystroke-triggered captures
+        if (provider.keystrokeTriggers.isNotEmpty) ...[
+          const SizedBox(height: 16),
+          _KeystrokeTriggerPanel(triggers: provider.keystrokeTriggers),
+        ],
       ],
     );
   }
@@ -113,6 +119,10 @@ class _NeuralCameraScreenState extends State<NeuralCameraScreen> {
         const SizedBox(height: 16),
         _NeuralStatsPanel(provider: provider),
         const SizedBox(height: 16),
+        if (provider.keystrokeTriggers.isNotEmpty) ...[
+          _KeystrokeTriggerPanel(triggers: provider.keystrokeTriggers),
+          const SizedBox(height: 16),
+        ],
         SizedBox(
           height: 400,
           child: CameraLogWidget(logs: provider.cameraLogs),
@@ -230,9 +240,9 @@ class _NeuralCameraHeader extends StatelessWidget {
 
           const SizedBox(width: 16),
 
-          // Verify Now button
+          // Verify Now button — re-captures reference face, then verifies
           GestureDetector(
-            onTap: provider.isVerifying || !provider.hasReferenceFace
+            onTap: provider.isVerifying
                 ? null
                 : () => provider.runSingleVerification(),
             child: Container(
@@ -766,7 +776,15 @@ class _FacePreviewCard extends StatelessWidget {
       ),
       clipBehavior: Clip.antiAlias,
       child: exists
-          ? Image.file(file, fit: BoxFit.cover)
+          ? Image.file(
+              file,
+              fit: BoxFit.cover,
+              gaplessPlayback: true,
+              // Bypass Flutter image cache so re-captured reference shows immediately
+              key: ValueKey(
+                '$imagePath-${file.lastModifiedSync().millisecondsSinceEpoch}',
+              ),
+            )
           : Center(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -787,6 +805,288 @@ class _FacePreviewCard extends StatelessWidget {
                 ],
               ),
             ),
+    );
+  }
+}
+
+// ─── Keystroke Trigger Panel ──────────────────────────────────
+
+/// Shows recent camera captures triggered by keystroke bad-word detection.
+class _KeystrokeTriggerPanel extends StatelessWidget {
+  final List<KeystrokeCameraTrigger> triggers;
+
+  const _KeystrokeTriggerPanel({required this.triggers});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: SentinelTheme.glassCard(glowColor: SentinelTheme.alertRed),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
+            child: Row(
+              children: [
+                Container(
+                  width: 28,
+                  height: 28,
+                  decoration: BoxDecoration(
+                    color: SentinelTheme.alertRed.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: SentinelTheme.alertRed.withValues(alpha: 0.3),
+                    ),
+                  ),
+                  child: Icon(
+                    Icons.keyboard_alt_outlined,
+                    size: 14,
+                    color: SentinelTheme.alertRed,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'KEYSTROKE-TRIGGERED CAPTURES',
+                        style: SentinelTheme.mono.copyWith(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                          color: SentinelTheme.alertRed,
+                          letterSpacing: 1,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        'Camera auto-captured when bad words detected in typing',
+                        style: SentinelTheme.sans.copyWith(
+                          fontSize: 10,
+                          color: SentinelTheme.textMuted,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 3,
+                  ),
+                  decoration: BoxDecoration(
+                    color: SentinelTheme.alertRed.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(
+                      color: SentinelTheme.alertRed.withValues(alpha: 0.3),
+                    ),
+                  ),
+                  child: Text(
+                    '${triggers.length} CAPTURES',
+                    style: SentinelTheme.mono.copyWith(
+                      fontSize: 9,
+                      fontWeight: FontWeight.w700,
+                      color: SentinelTheme.alertRed,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          // Trigger list
+          ...triggers.take(5).map((t) => _buildTriggerCard(t)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTriggerCard(KeystrokeCameraTrigger trigger) {
+    final ts = trigger.timestamp;
+    final time =
+        '${ts.hour.toString().padLeft(2, '0')}:${ts.minute.toString().padLeft(2, '0')}:${ts.second.toString().padLeft(2, '0')}';
+
+    final Color verifyColor;
+    final String verifyLabel;
+    final IconData verifyIcon;
+    if (trigger.faceVerified == true) {
+      verifyColor = SentinelTheme.alertGreen;
+      verifyLabel = 'SAME PERSON';
+      verifyIcon = Icons.verified_user;
+    } else if (trigger.faceVerified == false) {
+      verifyColor = SentinelTheme.alertRed;
+      verifyLabel = 'MISMATCH';
+      verifyIcon = Icons.gpp_bad_outlined;
+    } else {
+      verifyColor = SentinelTheme.textMuted;
+      verifyLabel = 'NO CAMERA';
+      verifyIcon = Icons.videocam_off;
+    }
+
+    final alertColor = trigger.alertType == 'backspaceCoverUp'
+        ? SentinelTheme.alertRed
+        : trigger.alertType == 'sentThreatening'
+        ? const Color(0xFFFF6B6B)
+        : SentinelTheme.alertAmber;
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: SentinelTheme.surface,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: alertColor.withValues(alpha: 0.2)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Row 1: Alert type + time + face result
+          Row(
+            children: [
+              _triggerBadge(
+                trigger.alertType == 'backspaceCoverUp'
+                    ? 'COVER-UP'
+                    : trigger.alertType == 'sentThreatening'
+                    ? 'SENT'
+                    : 'LIVE',
+                alertColor,
+              ),
+              const SizedBox(width: 6),
+              Icon(verifyIcon, size: 12, color: verifyColor),
+              const SizedBox(width: 4),
+              Text(
+                verifyLabel,
+                style: SentinelTheme.mono.copyWith(
+                  fontSize: 9,
+                  fontWeight: FontWeight.w700,
+                  color: verifyColor,
+                ),
+              ),
+              if (trigger.faceConfidence > 0) ...[
+                const SizedBox(width: 6),
+                Text(
+                  '${trigger.faceConfidence.toStringAsFixed(1)}%',
+                  style: SentinelTheme.mono.copyWith(
+                    fontSize: 9,
+                    color: SentinelTheme.textMuted,
+                  ),
+                ),
+              ],
+              const Spacer(),
+              Text(
+                time,
+                style: SentinelTheme.mono.copyWith(
+                  fontSize: 9,
+                  color: SentinelTheme.textMuted,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          // Row 2: Flagged words
+          Wrap(
+            spacing: 5,
+            runSpacing: 4,
+            children: trigger.flaggedWords
+                .take(5)
+                .map(
+                  (w) => Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 7,
+                      vertical: 2,
+                    ),
+                    decoration: BoxDecoration(
+                      color: SentinelTheme.alertRed.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: SentinelTheme.alertRed.withValues(alpha: 0.3),
+                      ),
+                    ),
+                    child: Text(
+                      '"$w"',
+                      style: SentinelTheme.mono.copyWith(
+                        fontSize: 9,
+                        color: SentinelTheme.alertRed,
+                      ),
+                    ),
+                  ),
+                )
+                .toList(),
+          ),
+          // Row 3: Evidence thumbnails
+          if (trigger.screenshotPath != null ||
+              trigger.facePhotoPath != null) ...[
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                if (trigger.screenshotPath != null)
+                  _evidenceThumb(trigger.screenshotPath!, 'SCREEN'),
+                if (trigger.screenshotPath != null &&
+                    trigger.facePhotoPath != null)
+                  const SizedBox(width: 8),
+                if (trigger.facePhotoPath != null)
+                  _evidenceThumb(trigger.facePhotoPath!, 'FACE'),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _triggerBadge(String label, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(color: color.withValues(alpha: 0.4)),
+      ),
+      child: Text(
+        label,
+        style: SentinelTheme.mono.copyWith(
+          fontSize: 8,
+          fontWeight: FontWeight.w700,
+          color: color,
+          letterSpacing: 0.5,
+        ),
+      ),
+    );
+  }
+
+  Widget _evidenceThumb(String path, String label) {
+    final file = File(path);
+    final exists = file.existsSync();
+    return Column(
+      children: [
+        Container(
+          width: 60,
+          height: 45,
+          decoration: BoxDecoration(
+            color: SentinelTheme.surface,
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(
+              color: SentinelTheme.border.withValues(alpha: 0.3),
+            ),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: exists
+              ? Image.file(file, fit: BoxFit.cover)
+              : Icon(
+                  Icons.image_not_supported,
+                  size: 16,
+                  color: SentinelTheme.textMuted,
+                ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          label,
+          style: SentinelTheme.mono.copyWith(
+            fontSize: 7,
+            color: SentinelTheme.textMuted,
+          ),
+        ),
+      ],
     );
   }
 }

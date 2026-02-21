@@ -104,6 +104,14 @@ class _AuthGate extends StatelessWidget {
     final sentinelProv = context.read<SentinelProvider>();
     sentinelProv.currentUserEmail = auth.user?.email ?? 'unknown';
 
+    // Tag keystroke capture reports with the current user's email
+    final keystrokeProv = context.read<KeystrokeProvider>();
+    keystrokeProv.setUserEmail(auth.user?.email ?? 'unknown');
+
+    // Link keystroke provider → sentinel provider so keystroke bad-word
+    // detections push camera verification results to the neural camera.
+    keystrokeProv.setSentinelProvider(sentinelProv);
+
     return const _FaceGate();
   }
 }

@@ -13,6 +13,8 @@ import '../services/mic_monitor_service.dart';
 import '../services/speech_to_text_service.dart';
 import '../services/text_analysis_service.dart';
 import '../services/screen_capture_service.dart';
+import '../services/face_verification_service.dart';
+import '../services/mongo_upload_service.dart';
 import 'sentinel_module_provider.dart';
 
 /// Voice Sentinel provider — manages mic monitoring, language analysis,
@@ -970,8 +972,8 @@ class VoiceSentinelProvider extends SentinelModuleProvider {
 
   // ── Threat Evidence Capture ─────────────────────────────────
 
-  /// Capture screen + webcam using the same logic as the Capture Test screen,
-  /// then update the DB alert record with the paths and store a ThreatReport.
+  /// Capture screen + webcam, verify the face against the reference,
+  /// upload all evidence to MongoDB Atlas, update local DB.
   /// Runs fire-and-forget — never blocks the alert pipeline.
   Future<void> _captureThreatEvidence(
     TextAnalysisResult analysis, {
@@ -984,8 +986,7 @@ class VoiceSentinelProvider extends SentinelModuleProvider {
         '[ThreatCapture] Capturing screen + face for alert $alertId...',
       );
 
-      // Use captureScreenAndCamera() — the same method the Capture Test screen uses.
-      // It runs both captures concurrently and returns a PairedCapture.
+      // ── Step 1: Capture screen + webcam concurrently ──
       final paired = await ScreenCaptureService.captureScreenAndCamera();
 
       final screenshotPath = paired?.screenPath;
@@ -996,8 +997,32 @@ class VoiceSentinelProvider extends SentinelModuleProvider {
         'face=${facePhotoPath ?? "FAILED"}',
       );
 
-      // Update the DB alert record with the capture paths so the admin panel
-      // can display them without needing a separate table.
+      // ── Step 2: Face verification — is this the same person? ──
+      bool? faceVerified;
+      double faceConfidence = 0.0;
+
+      final faceService = FaceVerificationService.instance;
+      if (facePhotoPath != null && faceService.hasReference) {
+        try {
+          debugPrint('[ThreatCapture] Running face verification...');
+          final vResult = await faceService.verify();
+          faceVerified = vResult.matched;
+          faceConfidence = vResult.confidence;
+          debugPrint(
+            '[ThreatCapture] Face verification: '
+            'matched=$faceVerified confidence=${faceConfidence.toStringAsFixed(1)}%',
+          );
+        } catch (e) {
+          debugPrint('[ThreatCapture] Face verification error: $e');
+        }
+      } else {
+        debugPrint(
+          '[ThreatCapture] Skipping face verify — '
+          'facePhoto=${facePhotoPath != null}, hasRef=${faceService.hasReference}',
+        );
+      }
+
+      // ── Step 3: Update local SQLite DB with capture paths ──
       if (screenshotPath != null || facePhotoPath != null) {
         await _db.updateAlertEvidence(
           alertId,
@@ -1006,7 +1031,20 @@ class VoiceSentinelProvider extends SentinelModuleProvider {
         );
       }
 
-      // Also keep an in-memory ThreatReport for the (now removed) user panel.
+      // ── Step 4: Upload to MongoDB Atlas (fire-and-forget) ──
+      MongoUploadService.instance.uploadKeystrokeAlert(
+        userEmail: _currentUserEmail,
+        alertType: analysis.alertType,
+        severity: severityFromScore(analysis.severity).name,
+        flaggedWords: analysis.flaggedWords,
+        transcript: text,
+        screenshotPath: screenshotPath,
+        facePhotoPath: facePhotoPath,
+        faceVerified: faceVerified,
+        faceConfidence: faceConfidence,
+      );
+
+      // ── Step 5: Keep in-memory ThreatReport ──
       final report = ThreatReport(
         id: generateId('tr'),
         timestamp: DateTime.now(),
@@ -1026,7 +1064,8 @@ class VoiceSentinelProvider extends SentinelModuleProvider {
         '[ThreatCapture] ✅ Report created | '
         'words: ${analysis.flaggedWords} | '
         'screenshot: ${screenshotPath != null} | '
-        'face: ${facePhotoPath != null}',
+        'face: ${facePhotoPath != null} | '
+        'verified: $faceVerified (${faceConfidence.toStringAsFixed(1)}%)',
       );
 
       notifyListeners();

@@ -3,9 +3,11 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/painting.dart';
 import 'package:path_provider/path_provider.dart';
 import '../models/models.dart';
 import '../services/face_verification_service.dart';
+import '../services/mongo_upload_service.dart';
 import '../services/api_service.dart';
 
 /// Central state management for the Shadow Sentinel dashboard.
@@ -198,6 +200,10 @@ class SentinelProvider extends ChangeNotifier {
   bool get hasReferenceFace => _faceService.hasReference;
   String? get referenceFacePath => _faceService.referenceFacePath;
 
+  /// Incremented each time the reference face is re-captured, to bust image cache.
+  int _referenceFaceVersion = 0;
+  int get referenceFaceVersion => _referenceFaceVersion;
+
   /// Path to the last captured verification face image.
   String? _lastVerificationImagePath;
   String? get lastVerificationImagePath => _lastVerificationImagePath;
@@ -218,6 +224,91 @@ class SentinelProvider extends ChangeNotifier {
   String _currentUserEmail = 'unknown';
   String get currentUserEmail => _currentUserEmail;
   set currentUserEmail(String email) => _currentUserEmail = email;
+
+  // ── Keystroke-Triggered Camera Events ────────────────────
+  /// Events triggered when the keystroke monitor detects bad words
+  /// and the neural camera captures + verifies the user.
+  final List<KeystrokeCameraTrigger> _keystrokeTriggers = [];
+  List<KeystrokeCameraTrigger> get keystrokeTriggers =>
+      List.unmodifiable(_keystrokeTriggers);
+
+  /// Called by [KeystrokeProvider] when bad words trigger a camera capture
+  /// and face verification. Updates the neural camera state so the UI
+  /// reflects the keystroke-triggered verification in real time.
+  void onKeystrokeThreatCapture({
+    required List<String> flaggedWords,
+    required String triggerText,
+    required String alertType,
+    bool? faceVerified,
+    double faceConfidence = 0.0,
+    String? screenshotPath,
+    String? facePhotoPath,
+  }) {
+    final trigger = KeystrokeCameraTrigger(
+      flaggedWords: flaggedWords,
+      triggerText: triggerText,
+      alertType: alertType,
+      faceVerified: faceVerified,
+      faceConfidence: faceConfidence,
+      screenshotPath: screenshotPath,
+      facePhotoPath: facePhotoPath,
+      timestamp: DateTime.now(),
+    );
+    _keystrokeTriggers.insert(0, trigger);
+    if (_keystrokeTriggers.length > 20) _keystrokeTriggers.removeLast();
+
+    // Update neural camera current frame with keystroke-triggered result
+    _totalFramesAnalyzed++;
+    if (facePhotoPath != null) {
+      _lastVerificationImagePath = facePhotoPath;
+    }
+
+    final scanMode = faceVerified == true
+        ? 'KEYSTROKE_MATCH'
+        : faceVerified == false
+        ? 'KEYSTROKE_MISMATCH'
+        : 'KEYSTROKE_NOCAM';
+
+    _currentFrame = FaceScanFrame(
+      confidence: faceConfidence,
+      livenessScore: faceVerified == true ? 95 : 0,
+      matched: faceVerified ?? false,
+      spoofingAttempt: false,
+      timestamp: DateTime.now(),
+      scanMode: scanMode,
+    );
+
+    // Update running average
+    if (faceConfidence > 0) {
+      if (_avgConfidence == 0) {
+        _avgConfidence = faceConfidence;
+      } else {
+        _avgConfidence = _avgConfidence * 0.85 + faceConfidence * 0.15;
+      }
+    }
+
+    _addCameraLog(
+      confidence: faceConfidence,
+      liveness: faceVerified == true ? 95 : 0,
+      matched: faceVerified ?? false,
+      spoofing: false,
+      detail:
+          '⌨️ KEYSTROKE TRIGGER: [${flaggedWords.join(", ")}] detected — '
+          'face ${faceVerified == true
+              ? "MATCHED"
+              : faceVerified == false
+              ? "MISMATCH"
+              : "N/A"} '
+          '(${faceConfidence.toStringAsFixed(1)}%)',
+    );
+
+    debugPrint(
+      '[NeuralCamera] Keystroke trigger: words=${flaggedWords} '
+      'verified=$faceVerified conf=$faceConfidence',
+    );
+
+    notifyListeners();
+  }
 
   FaceScanFrame _currentFrame = FaceScanFrame(
     confidence: 0,
@@ -291,15 +382,64 @@ class SentinelProvider extends ChangeNotifier {
   }
 
   /// Run a single face verification check.
+  /// Re-captures the reference face first, then verifies all future
+  /// images against this new reference.
   Future<FaceVerificationResult?> runSingleVerification() async {
-    if (!hasReferenceFace) return null;
-
     _isVerifying = true;
     _currentFrame = FaceScanFrame(
       confidence: _currentFrame.confidence,
       livenessScore: _currentFrame.livenessScore,
       matched: _currentFrame.matched,
       spoofingAttempt: _currentFrame.spoofingAttempt,
+      timestamp: DateTime.now(),
+      scanMode: 'ENROLLING',
+    );
+    notifyListeners();
+
+    // 1. Re-capture a fresh reference face
+    final refPath = await _faceService.captureReferenceFace();
+    if (refPath == null) {
+      _isVerifying = false;
+      _addCameraLog(
+        confidence: 0,
+        liveness: 0,
+        matched: false,
+        spoofing: false,
+        detail: 'Reference face re-capture failed — camera unavailable',
+      );
+      notifyListeners();
+      return null;
+    }
+
+    _addCameraLog(
+      confidence: 100,
+      liveness: 100,
+      matched: true,
+      spoofing: false,
+      detail:
+          'New reference face captured — all future verifications use this baseline',
+    );
+    _consecutiveMismatches = 0; // Reset mismatches for new reference
+    _referenceFaceVersion++; // Bust image cache for enrolled face display
+    // Evict old reference from Flutter's image cache so new photo shows immediately
+    final fileImage = FileImage(File(refPath));
+    imageCache.evict(fileImage);
+    _currentFrame = FaceScanFrame(
+      confidence: 100,
+      livenessScore: 100,
+      matched: true,
+      spoofingAttempt: false,
+      timestamp: DateTime.now(),
+      scanMode: 'ENROLLED',
+    );
+    notifyListeners();
+
+    // 2. Immediately run a verification against the new reference
+    _currentFrame = FaceScanFrame(
+      confidence: 100,
+      livenessScore: 100,
+      matched: true,
+      spoofingAttempt: false,
       timestamp: DateTime.now(),
       scanMode: 'SCANNING',
     );
@@ -308,6 +448,13 @@ class SentinelProvider extends ChangeNotifier {
     final result = await _faceService.verify();
     _processVerificationResult(result);
     _isVerifying = false;
+
+    // 3. Restart periodic verification with the new reference
+    if (_neuralScanActive) {
+      stopRealVerification();
+      startRealVerification();
+    }
+
     notifyListeners();
     return result;
   }
@@ -382,7 +529,7 @@ class SentinelProvider extends ChangeNotifier {
   }
 
   /// Persist a face mismatch alert to a shared JSON file so the admin
-  /// dashboard can read it.
+  /// dashboard can read it, and upload to MongoDB Atlas.
   Future<void> _persistFaceAlert(FaceVerificationResult result) async {
     try {
       final dir = await getApplicationDocumentsDirectory();
@@ -407,6 +554,14 @@ class SentinelProvider extends ChangeNotifier {
       });
 
       await file.writeAsString(jsonEncode(alerts));
+
+      // Upload to MongoDB Atlas (fire-and-forget)
+      MongoUploadService.instance.uploadFaceAlert(
+        userEmail: _currentUserEmail,
+        confidence: result.confidence,
+        consecutiveMismatches: _consecutiveMismatches,
+        facePhotoPath: result.capturedImagePath,
+      );
     } catch (e) {
       debugPrint('[NeuralCamera] Failed to persist face alert: $e');
     }
