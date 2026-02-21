@@ -771,7 +771,9 @@ class _FacePreviewCard extends StatelessWidget {
               fit: BoxFit.cover,
               gaplessPlayback: true,
               // Bypass Flutter image cache so re-captured reference shows immediately
-              key: ValueKey('$imagePath-${file.lastModifiedSync().millisecondsSinceEpoch}'),
+              key: ValueKey(
+                '$imagePath-${file.lastModifiedSync().millisecondsSinceEpoch}',
+              ),
             )
           : Center(
               child: Column(
