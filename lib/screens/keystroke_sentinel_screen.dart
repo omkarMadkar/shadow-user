@@ -5,7 +5,6 @@ import '../theme/sentinel_theme.dart';
 import '../widgets/keystroke_waveform_widget.dart';
 import '../widgets/keystroke_stats_panel.dart';
 import '../widgets/keystroke_pattern_chart.dart';
-import '../widgets/keystroke_enrollment_widget.dart';
 import '../widgets/keystroke_alert_card.dart';
 import '../widgets/keystroke_log_widget.dart';
 import '../widgets/content_threat_panel.dart';
@@ -45,15 +44,9 @@ class _KeystrokeSentinelScreenState extends State<KeystrokeSentinelScreen> {
   void _handleKeyEvent(KeyEvent event) {
     final kp = context.read<KeystrokeProvider>();
 
-    // Feed into the dynamics service
+    // Feed into the dynamics service and process every keystroke
     kp.service.handleKeyEvent(event);
-
-    // Process based on mode
-    if (kp.mode == KeystrokeMode.enrolling) {
-      kp.processEnrollmentKey();
-    } else if (kp.mode == KeystrokeMode.monitoring && !kp.demoMode) {
-      kp.processMonitoringKey();
-    }
+    kp.processLiveKey();
   }
 
   @override
@@ -88,14 +81,17 @@ class _KeystrokeSentinelScreenState extends State<KeystrokeSentinelScreen> {
         _ScreenHeader(),
         const SizedBox(height: 16),
 
-        // Top row: Stats | Enrollment
+        // Top row: Stats | Content Threat Monitor
         IntrinsicHeight(
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Expanded(flex: 5, child: KeystrokeStatsPanel()),
               const SizedBox(width: 16),
-              const Expanded(flex: 5, child: KeystrokeEnrollmentWidget()),
+              const Expanded(
+                flex: 5,
+                child: SizedBox(height: 250, child: ContentThreatPanel()),
+              ),
             ],
           ),
         ),
@@ -127,10 +123,6 @@ class _KeystrokeSentinelScreenState extends State<KeystrokeSentinelScreen> {
             ],
           ),
         ),
-        const SizedBox(height: 16),
-
-        // Content Threat Monitor (OS-level)
-        const SizedBox(height: 350, child: ContentThreatPanel()),
       ],
     );
   }
@@ -142,7 +134,7 @@ class _KeystrokeSentinelScreenState extends State<KeystrokeSentinelScreen> {
         const SizedBox(height: 16),
         const KeystrokeStatsPanel(),
         const SizedBox(height: 16),
-        const KeystrokeEnrollmentWidget(),
+        const SizedBox(height: 280, child: ContentThreatPanel()),
         const SizedBox(height: 16),
         const SizedBox(height: 220, child: KeystrokeWaveformWidget()),
         const SizedBox(height: 16),
@@ -151,8 +143,6 @@ class _KeystrokeSentinelScreenState extends State<KeystrokeSentinelScreen> {
         const SizedBox(height: 280, child: KeystrokeAlertCard()),
         const SizedBox(height: 16),
         const SizedBox(height: 280, child: KeystrokeLogWidget()),
-        const SizedBox(height: 16),
-        const SizedBox(height: 350, child: ContentThreatPanel()),
       ],
     );
   }

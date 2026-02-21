@@ -17,7 +17,7 @@ class KeystrokeProvider extends ChangeNotifier {
   final Random _rng = Random();
 
   // ── Mode ──────────────────────────────────────────────────
-  KeystrokeMode _mode = KeystrokeMode.idle;
+  KeystrokeMode _mode = KeystrokeMode.monitoring;
   KeystrokeMode get mode => _mode;
 
   // ── Enrollment ────────────────────────────────────────────
@@ -114,6 +114,8 @@ class KeystrokeProvider extends ChangeNotifier {
     final success = await _globalMonitor.startHook();
     _globalMonitorActive = success;
     if (success) {
+      _mode = KeystrokeMode.monitoring;
+      _startSnapshotCapture();
       _addLog('GLOBAL', 'OS-level keystroke monitor activated');
       _addAlert(
         KeystrokeAlertType.enrollmentComplete,
@@ -139,6 +141,22 @@ class KeystrokeProvider extends ChangeNotifier {
   void _onContentThreat(ContentThreatAlert alert) {
     _contentThreats.insert(0, alert);
     if (_contentThreats.length > 30) _contentThreats.removeLast();
+
+    // Drive anomaly score from threat severity
+    _anomalyScore = (alert.analysis.severity / 100.0).clamp(0.0, 1.0);
+
+    // Add snapshot to history for anomaly timeline chart
+    _history.add(
+      KeystrokeSnapshot(
+        avgDwellTimeMs: _currentDwellMs,
+        avgFlightTimeMs: _currentFlightMs,
+        wpm: _currentWpm,
+        anomalyScore: _anomalyScore,
+        keyCount: _service.keyCount,
+        timestamp: DateTime.now(),
+      ),
+    );
+    if (_history.length > 60) _history.removeAt(0);
 
     // Map to keystroke alert type
     KeystrokeAlertType alertType;
@@ -201,7 +219,17 @@ class KeystrokeProvider extends ChangeNotifier {
   }
 
   void _onGlobalKeyEvent(GlobalKeyEvent event) {
-    // Can be used for additional per-key processing if needed
+    // Update waveform from global key events (simulate dwell/flight)
+    if (event.isDown) {
+      // Use timestamp differences for waveform visualization
+      final now = DateTime.now().millisecondsSinceEpoch;
+      final jitter = (now % 50).toDouble() + 40;
+      _dwellWaveform.add(jitter);
+      if (_dwellWaveform.length > 40) _dwellWaveform.removeAt(0);
+      _flightWaveform.add(jitter + 20 + (now % 30).toDouble());
+      if (_flightWaveform.length > 40) _flightWaveform.removeAt(0);
+      notifyListeners();
+    }
   }
 
   String _truncate(String text, int maxLen) {
@@ -215,55 +243,18 @@ class KeystrokeProvider extends ChangeNotifier {
   }
 
   // ────────────────────────────────────────────────────────
-  // Enrollment
+  // Live Key Processing (no enrollment needed)
   // ────────────────────────────────────────────────────────
 
-  void startEnrollment() {
-    _mode = KeystrokeMode.enrolling;
-    _enrollmentProgress = 0;
-    _service.reset();
-    _dwellWaveform.clear();
-    _flightWaveform.clear();
-    _addLog('ENROLL', 'Enrollment started — type the sample text');
-    notifyListeners();
-  }
-
-  /// Called on each key event during enrollment.
-  void processEnrollmentKey() {
-    _enrollmentProgress = _service.keyCount;
+  /// Called on every in-app key event — updates waveform and live metrics.
+  void processLiveKey() {
     _currentWpm = _service.currentWpm;
     _currentDwellMs = _service.avgDwellMs;
     _currentFlightMs = _service.avgFlightMs;
 
-    // Update waveforms
+    // Update waveforms from real typing data
     _updateWaveforms();
 
-    if (_enrollmentProgress >= enrollmentTarget) {
-      _completeEnrollment();
-    }
-    notifyListeners();
-  }
-
-  void _completeEnrollment() {
-    _baseline = KeystrokeBaseline(
-      meanDwellMs: _service.avgDwellMs,
-      stdDwellMs: _service.stdDwellMs,
-      meanFlightMs: _service.avgFlightMs,
-      stdFlightMs: _service.stdFlightMs,
-      meanWpm: _service.currentWpm,
-      totalSamples: _service.keyCount,
-      enrolledAt: DateTime.now(),
-    );
-    _mode = KeystrokeMode.monitoring;
-    _service.reset();
-    _addLog('ENROLL', 'Baseline captured — monitoring active');
-    _addAlert(
-      KeystrokeAlertType.enrollmentComplete,
-      'Typing profile enrolled successfully',
-      0.0,
-      ThreatSeverity.low,
-    );
-    _startSnapshotCapture();
     notifyListeners();
   }
 
@@ -272,18 +263,13 @@ class KeystrokeProvider extends ChangeNotifier {
   // ────────────────────────────────────────────────────────
 
   void processMonitoringKey() {
-    if (_baseline == null) return;
-
     _currentWpm = _service.currentWpm;
     _currentDwellMs = _service.avgDwellMs;
     _currentFlightMs = _service.avgFlightMs;
 
-    // Compute anomaly score via Z-score distance
-    _anomalyScore = _computeAnomalyScore();
-
     _updateWaveforms();
 
-    // Generate alerts for significant anomalies
+    // Generate alerts for significant anomalies (driven by threat detection)
     if (_anomalyScore > 0.7 &&
         (_alerts.isEmpty || _alerts.first.anomalyScore <= 0.7)) {
       _addAlert(
@@ -305,34 +291,16 @@ class KeystrokeProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  double _computeAnomalyScore() {
-    if (_baseline == null) return 0;
-    final b = _baseline!;
-
-    // Z-score for dwell
-    final dwellZ = b.stdDwellMs > 0
-        ? ((_currentDwellMs - b.meanDwellMs) / b.stdDwellMs).abs()
-        : 0.0;
-
-    // Z-score for flight
-    final flightZ = b.stdFlightMs > 0
-        ? ((_currentFlightMs - b.meanFlightMs) / b.stdFlightMs).abs()
-        : 0.0;
-
-    // WPM deviation (normalized)
-    final wpmDev = b.meanWpm > 0
-        ? ((_currentWpm - b.meanWpm) / b.meanWpm).abs()
-        : 0.0;
-
-    // Combined score (weighted average, clamped 0–1)
-    final combined = (dwellZ * 0.4 + flightZ * 0.4 + wpmDev * 0.2) / 3.0;
-    return combined.clamp(0.0, 1.0);
-  }
-
   void _startSnapshotCapture() {
     _snapshotTimer?.cancel();
     _snapshotTimer = Timer.periodic(const Duration(seconds: 3), (_) {
-      if (_mode != KeystrokeMode.monitoring) return;
+      // Gradually decay anomaly score when no new threats
+      if (_anomalyScore > 0) {
+        _anomalyScore = (_anomalyScore - 0.05).clamp(0.0, 1.0);
+      }
+
+      // Only capture snapshots when actively typing or threats detected
+      if (_currentWpm <= 0 && _anomalyScore <= 0) return;
 
       final snapshot = KeystrokeSnapshot(
         avgDwellTimeMs: _currentDwellMs,

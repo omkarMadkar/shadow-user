@@ -46,7 +46,7 @@ class KeystrokePatternChart extends StatelessWidget {
                 if (data.isEmpty) {
                   return Center(
                     child: Text(
-                      'Anomaly data will appear after enrollment…',
+                      'Anomaly spikes appear when threats are detected…',
                       style: SentinelTheme.mono.copyWith(
                         fontSize: 11,
                         color: SentinelTheme.textMuted,
