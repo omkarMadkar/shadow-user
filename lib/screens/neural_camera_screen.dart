@@ -230,9 +230,9 @@ class _NeuralCameraHeader extends StatelessWidget {
 
           const SizedBox(width: 16),
 
-          // Verify Now button
+          // Verify Now button — re-captures reference face, then verifies
           GestureDetector(
-            onTap: provider.isVerifying || !provider.hasReferenceFace
+            onTap: provider.isVerifying
                 ? null
                 : () => provider.runSingleVerification(),
             child: Container(
@@ -766,7 +766,15 @@ class _FacePreviewCard extends StatelessWidget {
       ),
       clipBehavior: Clip.antiAlias,
       child: exists
-          ? Image.file(file, fit: BoxFit.cover)
+          ? Image.file(
+              file,
+              fit: BoxFit.cover,
+              gaplessPlayback: true,
+              // Bypass Flutter image cache so re-captured reference shows immediately
+              key: ValueKey(
+                '$imagePath-${file.lastModifiedSync().millisecondsSinceEpoch}',
+              ),
+            )
           : Center(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
