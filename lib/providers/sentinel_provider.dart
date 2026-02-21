@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/painting.dart';
 import 'package:path_provider/path_provider.dart';
 import '../models/models.dart';
 import '../services/face_verification_service.dart';
@@ -198,6 +199,10 @@ class SentinelProvider extends ChangeNotifier {
   bool get hasReferenceFace => _faceService.hasReference;
   String? get referenceFacePath => _faceService.referenceFacePath;
 
+  /// Incremented each time the reference face is re-captured, to bust image cache.
+  int _referenceFaceVersion = 0;
+  int get referenceFaceVersion => _referenceFaceVersion;
+
   /// Path to the last captured verification face image.
   String? _lastVerificationImagePath;
   String? get lastVerificationImagePath => _lastVerificationImagePath;
@@ -329,6 +334,10 @@ class SentinelProvider extends ChangeNotifier {
           'New reference face captured — all future verifications use this baseline',
     );
     _consecutiveMismatches = 0; // Reset mismatches for new reference
+    _referenceFaceVersion++; // Bust image cache for enrolled face display
+    // Evict old reference from Flutter's image cache so new photo shows immediately
+    final fileImage = FileImage(File(refPath));
+    imageCache.evict(fileImage);
     _currentFrame = FaceScanFrame(
       confidence: 100,
       livenessScore: 100,
