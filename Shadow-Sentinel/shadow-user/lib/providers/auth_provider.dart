@@ -238,8 +238,7 @@ class AuthProvider extends ChangeNotifier {
       if (defaultTargetPlatform == TargetPlatform.windows) {
         // Desktop OAuth2 flow via system browser
         final oauth = GoogleOAuthDesktop(
-          clientId:
-              'PASTE_YOUR_GOOGLE_CLIENT_ID',
+          clientId: 'PASTE_YOUR_GOOGLE_CLIENT_ID',
           clientSecret: 'PASTE_YOUR_GOOGLE_CLIENT_SECRET',
         );
 
